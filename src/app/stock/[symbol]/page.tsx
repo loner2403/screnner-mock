@@ -1,380 +1,415 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { type StockData, formatLargeNumber, formatPercentage, formatMarketCap } from '@/lib/api';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, TrendingDown } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { type StockData, formatMarketCap } from '@/lib/api';
+import CompanyInfoSection from '@/components/CompanyInfoSection';
+import StockChart from '@/components/StockChart';
+import { QuarterlyResultsTable } from '@/components/QuarterlyResults';
 
-export default function StockDetailPage() {
-  const params = useParams();
-  const router = useRouter();
-  const [stock, setStock] = useState<StockData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedTimeframe, setSelectedTimeframe] = useState('1Y');
 
-  const symbol = params.symbol as string;
 
-  useEffect(() => {
-    const fetchStockDetail = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch('/api/stocks', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            searchTerm: decodeURIComponent(symbol),
-          }),
-        });
+// Extended interface for detailed stock data as per design document
+interface DetailedStockData extends StockData {
+    // Company Information
+    sector?: string;
+    industry?: string;
+    employees?: number;
+    website?: string;
+    description?: string;
+    headquarters?: string;
+    founded?: string;
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch stock data');
-        }
+    // Financial Health
+    debt_to_equity?: number;
+    current_ratio?: number;
+    quick_ratio?: number;
+    interest_coverage?: number;
 
-        const data = await response.json();
-        console.log(`Stock detail page received data for ${symbol}:`, data);
-        
-        if (data.data && data.data.length > 0) {
-          // Find exact match first, then fallback to partial match
-          const exactMatch = data.data.find((stock: StockData) => 
-            stock.symbol_code === decodeURIComponent(symbol)
-          );
-          const partialMatch = data.data.find((stock: StockData) => 
-            stock.symbol_code.includes(decodeURIComponent(symbol).replace('NSE:', '').replace('BSE:', ''))
-          );
-          
-          setStock(exactMatch || partialMatch || data.data[0]);
-        } else {
-          setError('Stock not found');
-        }
-      } catch (err) {
-        setError('Failed to load stock data');
-        console.error('Error fetching stock detail:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    // Valuation Metrics
+    price_to_sales?: number;
+    enterprise_value?: number;
+    ev_to_ebitda?: number;
+    ev_to_sales?: number;
 
-    if (symbol) {
-      fetchStockDetail();
-    }
-  }, [symbol]);
+    // Profitability
+    gross_margin?: number;
+    operating_margin?: number;
+    net_margin?: number;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+    // Efficiency
+    asset_turnover?: number;
+    inventory_turnover?: number;
+    receivables_turnover?: number;
 
-  if (error || !stock) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Stock Not Found</h1>
-          <p className="text-gray-600 mb-6">{error || 'The requested stock could not be found.'}</p>
-          <button
-            onClick={() => router.push('/')}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
+    // Growth Rates
+    revenue_growth_1y?: number;
+    revenue_growth_3y?: number;
+    earnings_growth_1y?: number;
+    earnings_growth_3y?: number;
 
-  const changeColor = stock.change && stock.change >= 0 ? 'text-green-600' : 'text-red-600';
-  const changeBgColor = stock.change && stock.change >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
-  const changeIcon = stock.change && stock.change >= 0 ? '●' : '●';
+    // Performance Returns
+    return_1_week?: number;
+    return_1_month?: number;
+    return_3_months?: number;
+    return_6_months?: number;
+    return_1_year?: number;
+    return_3_years?: number;
+    return_5_years?: number;
 
-  const timeframes = ['1M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'];
+    // Risk Metrics
+    volatility_1_month?: number;
+    volatility_1_year?: number;
+    max_drawdown?: number;
+    sharpe_ratio?: number;
 
-  // Get exchange and symbol info
-  const exchangeInfo = stock.symbol_code.split(':');
-  const exchange = exchangeInfo[0];
-  const symbolCode = exchangeInfo[1];
+    // Dividend Information
+    dividend_frequency?: 'Annual' | 'Semi-Annual' | 'Quarterly' | 'Monthly';
+    last_dividend_date?: string;
+    next_dividend_date?: string;
+    dividend_growth_rate?: number;
 
-  // Generate mock chart data based on selected timeframe
-  const generateChartData = () => {
-    const dataPoints = selectedTimeframe === '1M' ? 30 : 
-                      selectedTimeframe === '6M' ? 180 : 
-                      selectedTimeframe === '1Y' ? 365 : 
-                      selectedTimeframe === '3Y' ? 1095 : 
-                      selectedTimeframe === '5Y' ? 1825 : 2555;
-    
-    const basePrice = stock.close;
-    const performanceMap = {
-      '1M': stock.performance_month || 2.3,
-      '6M': stock.performance_6_month || 12.4,
-      '1Y': stock.performance_year || 18.9,
-      '3Y': (stock.performance_year || 18.9) * 2.2,
-      '5Y': stock.performance_5_year || 85.2,
-      '10Y': (stock.performance_5_year || 85.2) * 1.8,
-      'Max': (stock.performance_5_year || 85.2) * 2.5
-    };
-    
-    const totalReturn = performanceMap[selectedTimeframe as keyof typeof performanceMap];
-    const data = [];
-    
-    for (let i = 0; i < Math.min(dataPoints, 50); i++) {
-      const progress = i / Math.min(dataPoints, 50);
-      const volatility = (Math.random() - 0.5) * 0.1;
-      const trendReturn = totalReturn * progress / 100;
-      const price = basePrice * (1 + trendReturn + volatility);
-      
-      data.push({
-        date: `Day ${i + 1}`,
-        price: Math.round(price * 100) / 100,
-        volume: Math.round((stock.average_volume_30d || 7000000) * (0.8 + Math.random() * 0.4))
-      });
-    }
-    
-    return data;
-  };
-
-  const renderPerformanceChart = () => {
-    const chartData = generateChartData();
-    const maxPrice = Math.max(...chartData.map(d => d.price));
-    const minPrice = Math.min(...chartData.map(d => d.price));
-    const priceRange = maxPrice - minPrice;
-    
-    return (
-      <div className="relative w-full h-full">
-        <svg className="w-full h-full" viewBox="0 0 800 300">
-          {/* Grid lines */}
-          {[0, 1, 2, 3, 4].map(i => (
-            <line
-              key={`grid-${i}`}
-              x1="50"
-              y1={50 + i * 50}
-              x2="750"
-              y2={50 + i * 50}
-              stroke="#e5e7eb"
-              strokeWidth="1"
-            />
-          ))}
-          
-          {/* Price line */}
-          <polyline
-            fill="none"
-            stroke="#2563eb"
-            strokeWidth="2"
-            points={chartData.map((point, index) => {
-              const x = 50 + (index / (chartData.length - 1)) * 700;
-              const y = 250 - ((point.price - minPrice) / priceRange) * 200;
-              return `${x},${y}`;
-            }).join(' ')}
-          />
-          
-          {/* Y-axis labels */}
-          {[0, 1, 2, 3, 4].map(i => (
-            <text
-              key={`y-label-${i}`}
-              x="40"
-              y={255 - i * 50}
-              textAnchor="end"
-              fontSize="12"
-              fill="#6b7280"
-            >
-              ₹{Math.round(minPrice + (priceRange * i / 4))}
-            </text>
-          ))}
-          
-          {/* Current price indicator */}
-          <circle
-            cx={50 + 700}
-            cy={250 - ((stock.close - minPrice) / priceRange) * 200}
-            r="4"
-            fill="#2563eb"
-          />
-        </svg>
-        
-        {/* Performance metrics */}
-        <div className="absolute top-4 right-4 bg-white bg-opacity-90 rounded-lg p-3 border">
-          <div className="text-sm">
-            <div className="font-semibold text-gray-900">Performance</div>
-            <div className={`text-sm ${(chartData[chartData.length - 1]?.price || 0) >= stock.close ? 'text-green-600' : 'text-red-600'}`}>
-              {selectedTimeframe}: {((chartData[chartData.length - 1]?.price || stock.close) / stock.close - 1) * 100 >= 0 ? '+' : ''}
-              {(((chartData[chartData.length - 1]?.price || stock.close) / stock.close - 1) * 100).toFixed(2)}%
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="mx-auto max-w-7xl px-6 py-4">
-          <button
-            onClick={() => router.push('/')}
-            className="flex items-center text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to Dashboard
-          </button>
-        </div>
-      </header>
-
-      {/* Stock Header */}
-      <div className="bg-white px-6 py-6">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex items-start justify-between mb-6">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">{stock.name}</h1>
-              <div className="flex items-center space-x-4 text-sm">
-                <a href={`https://${stock.name.toLowerCase().replace(/\s+/g, '').replace('ltd', '')}.com`} 
-                   className="text-blue-600 hover:underline flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                  {stock.name.toLowerCase().replace(/\s+/g, '').replace('ltd', '')}.com
-                </a>
-                <span className="text-gray-500">
-                  <span className="bg-gray-100 px-2 py-1 rounded text-xs font-medium">BSE: {symbolCode}</span>
-                </span>
-                <span className="text-gray-500">
-                  <span className="bg-blue-100 px-2 py-1 rounded text-xs font-medium">{exchange}: {symbolCode}</span>
-                </span>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-5xl font-bold text-gray-900 mb-2">₹{stock.close.toFixed(2)}</div>
-              {stock.change !== undefined && stock.change !== null && (
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-lg font-semibold ${changeBgColor} ${changeColor} border`}>
-                  <span className="mr-1">{changeIcon}</span>
-                  {formatPercentage(stock.change)}
-                  <span className="text-sm text-gray-600 ml-2">14 Aug - close price</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Key Metrics Grid - Matching Reference Layout */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-6">
-              <div>
-                <div className="text-sm text-gray-600 mb-1">Market Cap</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  ₹{formatMarketCap(stock.market_cap)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">Current Price</div>
-                <div className="text-lg font-semibold text-gray-900">₹{stock.close.toFixed(0)}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">High / Low</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  ₹{stock.high?.toFixed(0)} / {stock.low?.toFixed(0)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">Stock P/E</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  {stock.price_earnings_ttm?.toFixed(1) || 'N/A'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">Book Value</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  {stock.price_book_fq ? `₹${stock.price_book_fq.toFixed(0)}` : 'N/A'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">Dividend Yield</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  {stock.dividends_yield?.toFixed(2)}%
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">ROCE</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  {stock.return_on_invested_capital_fq ? `${stock.return_on_invested_capital_fq.toFixed(1)}%` : 'N/A'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">ROE</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  {stock.return_on_equity_fq ? `${stock.return_on_equity_fq.toFixed(1)}%` : 'N/A'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600 mb-1">Face Value</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  ₹{stock.beta_1_year?.toFixed(2) || '1.00'}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Chart Section */}
-      <div className="bg-white px-6 py-6 border-t border-gray-200">
-        <div className="mx-auto max-w-7xl">
-          {/* Timeframe Buttons */}
-          <div className="flex space-x-1 mb-6">
-            {timeframes.map((timeframe) => (
-              <button
-                key={timeframe}
-                onClick={() => setSelectedTimeframe(timeframe)}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  selectedTimeframe === timeframe
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {timeframe}
-              </button>
-            ))}
-          </div>
-
-          {/* Chart Placeholder */}
-          <div className="bg-gray-50 rounded-lg p-8 text-center min-h-[400px] flex items-center justify-center">
-            <div className="text-gray-500">
-              <div className="mb-4">
-                <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Price Chart</h3>
-              <p className="text-gray-600">
-                Chart for {selectedTimeframe} timeframe will be displayed here.
-                <br />
-                Integration with charting library (Chart.js, Recharts, etc.) pending.
-              </p>
-            </div>
-          </div>
-
-          {/* Chart Legend */}
-          <div className="flex items-center justify-center space-x-6 mt-4 text-sm">
-            <div className="flex items-center">
-              <div className="w-3 h-3 bg-blue-600 rounded-full mr-2"></div>
-              <span className="text-gray-600">Price on {exchange}</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
-              <span className="text-gray-600">50 DMA</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
-              <span className="text-gray-600">200 DMA</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-3 h-3 bg-gray-400 rounded-full mr-2"></div>
-              <span className="text-gray-600">Volume</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+    // Trading Information
+    average_volume_30d?: number;
+    shares_outstanding?: number;
+    float_shares?: number;
+    insider_ownership?: number;
+    institutional_ownership?: number;
 }
+
+interface StockDetailPageProps {
+    params: Promise<{ symbol: string }>;
+}
+
+// Loading skeleton component
+const LoadingSkeleton = () => (
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+        <div className="container mx-auto px-4 py-8">
+            {/* Header skeleton */}
+            <div className="flex items-center gap-4 mb-8">
+                <div className="w-8 h-8 bg-gray-200 rounded animate-pulse" />
+                <div className="flex-1">
+                    <div className="h-8 bg-gray-200 rounded w-64 mb-2 animate-pulse" />
+                    <div className="h-4 bg-gray-200 rounded w-32 animate-pulse" />
+                </div>
+                <div className="flex gap-2">
+                    <div className="w-24 h-8 bg-gray-200 rounded animate-pulse" />
+                    <div className="w-24 h-8 bg-gray-200 rounded animate-pulse" />
+                </div>
+            </div>
+
+            {/* Price section skeleton */}
+            <Card className="mb-8">
+                <CardContent className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <div className="h-12 bg-gray-200 rounded w-48 mb-2 animate-pulse" />
+                            <div className="h-6 bg-gray-200 rounded w-32 animate-pulse" />
+                        </div>
+                        <div className="h-8 bg-gray-200 rounded w-24 animate-pulse" />
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[...Array(4)].map((_, i) => (
+                            <div key={i} className="space-y-2">
+                                <div className="h-4 bg-gray-200 rounded w-20 animate-pulse" />
+                                <div className="h-6 bg-gray-200 rounded w-24 animate-pulse" />
+                            </div>
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Content skeleton */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-6">
+                    <Card>
+                        <CardContent className="p-6">
+                            <div className="h-64 bg-gray-200 rounded animate-pulse" />
+                        </CardContent>
+                    </Card>
+                </div>
+                <div className="space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <div className="h-6 bg-gray-200 rounded w-32 animate-pulse" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="space-y-3">
+                                {[...Array(6)].map((_, i) => (
+                                    <div key={i} className="flex justify-between">
+                                        <div className="h-4 bg-gray-200 rounded w-20 animate-pulse" />
+                                        <div className="h-4 bg-gray-200 rounded w-16 animate-pulse" />
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// Error component
+const ErrorState = ({ error, onRetry }: { error: string; onRetry: () => void }) => (
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+        <div className="container mx-auto px-4 py-8">
+            <div className="flex items-center gap-4 mb-8">
+                <Button variant="ghost" size="sm" onClick={() => window.history.back()}>
+                    <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <h1 className="text-2xl font-bold">Stock Details</h1>
+            </div>
+
+            <Card className="max-w-md mx-auto">
+                <CardContent className="p-8 text-center">
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <TrendingDown className="h-8 w-8 text-red-500" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">Unable to Load Stock Data</h3>
+                    <p className="text-muted-foreground mb-4">{error}</p>
+                    <div className="flex gap-2 justify-center">
+                        <Button onClick={onRetry}>Try Again</Button>
+                        <Button variant="outline" onClick={() => window.history.back()}>
+                            Go Back
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+    </div>
+);
+
+function StockDetailPage({ params }: StockDetailPageProps) {
+    const router = useRouter();
+    const [stockData, setStockData] = useState<DetailedStockData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [isInWatchlist, setIsInWatchlist] = useState(false);
+    const [symbol, setSymbol] = useState<string>('');
+
+    // Resolve params and decode the symbol parameter
+    useEffect(() => {
+        params.then(resolvedParams => {
+            setSymbol(decodeURIComponent(resolvedParams.symbol));
+        });
+    }, [params]);
+
+    const fetchStockData = async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            // For now, we'll use the existing stocks API to get basic data
+            // This will be replaced with the detailed API endpoint in task 2
+            const response = await fetch('/api/stocks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    searchTerm: symbol,
+                    limit: 1,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch stock data: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.data || data.data.length === 0) {
+                throw new Error(`Stock with symbol "${symbol}" not found`);
+            }
+
+            // Find exact match or closest match
+            const exactMatch = data.data.find((stock: StockData) =>
+                stock.symbol_code.toLowerCase() === symbol.toLowerCase() ||
+                stock.symbol_code.split(':')[1]?.toLowerCase() === symbol.toLowerCase()
+            );
+
+            if (!exactMatch) {
+                throw new Error(`Stock with symbol "${symbol}" not found`);
+            }
+
+            setStockData(exactMatch);
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+            setError(errorMessage);
+            console.error('Error fetching stock data:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (symbol) {
+            fetchStockData();
+        }
+    }, [symbol]);
+
+    const handleWatchlistToggle = () => {
+        setIsInWatchlist(!isInWatchlist);
+        // TODO: Implement actual watchlist functionality in task 13
+        console.log(`${isInWatchlist ? 'Removed from' : 'Added to'} watchlist:`, symbol);
+    };
+
+    const handleShare = () => {
+        if (navigator.share) {
+            navigator.share({
+                title: `${stockData?.name} (${symbol})`,
+                text: `Check out ${stockData?.name} stock details`,
+                url: window.location.href,
+            });
+        } else {
+            navigator.clipboard.writeText(window.location.href);
+            // TODO: Show toast notification
+            console.log('URL copied to clipboard');
+        }
+    };
+
+
+
+    // Show loading state
+    if (loading) {
+        return <LoadingSkeleton />;
+    }
+
+    // Show error state
+    if (error || !stockData) {
+        return <ErrorState error={error || 'Stock data not available'} onRetry={fetchStockData} />;
+    }
+
+    const isPositive = stockData.change && stockData.change >= 0;
+    const changeColor = isPositive ? 'text-green-600' : 'text-red-600';
+    const changeBgColor = isPositive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700';
+
+    return (
+        <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+            <div className="container mx-auto px-4 py-8">
+                {/* Company Info Section - USD values are automatically converted to INR in crores format */}
+                <CompanyInfoSection
+                    symbol={symbol}
+                    companyName={stockData.name}
+                    currentPrice={stockData.close} // USD price, converted to INR in component
+                    change={stockData.change || 0}
+                    changePercent={stockData.change || 0}
+                    marketCap={stockData.market_cap} // USD market cap, will be converted to INR crores in component
+                    high={stockData.high || stockData.close} // USD high, converted to INR in component
+                    low={stockData.low || stockData.close} // USD low, converted to INR in component
+                    pe={stockData.price_earnings_ttm}
+                    bookValue={stockData.price_book_fq} // USD book value, converted to INR in component
+                    dividendYield={stockData.dividends_yield}
+                    roce={stockData.return_on_invested_capital_fq}
+                    roe={stockData.return_on_equity_fq}
+                    faceValue={1}
+                    website="https://hul.co.in"
+                    bseCode="500696"
+                    nseCode="HINDUNILVR"
+                    description={`${stockData.name} is in the FMCG business comprising primarily of Home Care, Beauty & Personal Care and Foods & Refreshment segments.`}
+                    sector={stockData.sector || "Consumer Goods"}
+                    businessSegments={["Home Care", "Beauty & Personal Care", "Foods & Refreshment"]}
+                    className="mb-8"
+                />
+
+                {/* Main Content Area */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Left Column - Chart and Main Content */}
+                    <div className="lg:col-span-2 space-y-8">
+                        <StockChart
+                            symbol={symbol}
+                            currentPrice={stockData.close}
+                        />
+                        
+                        {/* Quarterly Results Section */}
+                        <QuarterlyResultsTable
+                            symbol={symbol}
+                            companyName={stockData.name}
+                            sector={stockData.sector}
+                            className="mt-8"
+                        />
+                    </div>
+
+                    {/* Right Column - Key Metrics */}
+                    <div className="space-y-6">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Key Metrics</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-4">
+                                    {stockData.price_earnings_ttm && (
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-muted-foreground">P/E Ratio</span>
+                                            <span className="font-medium">{stockData.price_earnings_ttm.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    {stockData.price_book_fq && (
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-muted-foreground">P/B Ratio</span>
+                                            <span className="font-medium">{stockData.price_book_fq.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    {stockData.return_on_equity_fq && (
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-muted-foreground">ROE</span>
+                                            <span className="font-medium">{stockData.return_on_equity_fq.toFixed(2)}%</span>
+                                        </div>
+                                    )}
+                                    {stockData.dividends_yield && (
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-muted-foreground">Dividend Yield</span>
+                                            <span className="font-medium">{stockData.dividends_yield.toFixed(2)}%</span>
+                                        </div>
+                                    )}
+                                    {stockData.beta_1_year && (
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-muted-foreground">Beta</span>
+                                            <span className="font-medium">{stockData.beta_1_year.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between">
+                                        <span className="text-sm text-muted-foreground">Market Cap</span>
+                                        <span className="font-medium">{formatMarketCap(stockData.market_cap)}</span>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Company Info</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-4">
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Symbol</p>
+                                        <p className="font-medium">{stockData.symbol_code}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Exchange</p>
+                                        <p className="font-medium">{stockData.symbol_code.split(':')[0] || 'NSE'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Country</p>
+                                        <p className="font-medium">{stockData.country}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Currency</p>
+                                        <p className="font-medium">{stockData.fundamental_currency}</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+export
+    default StockDetailPage;

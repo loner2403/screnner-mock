@@ -60,6 +60,8 @@ const mockStockData = {
       beta_1_year: 1.00,
       price_book_fq: 2.84,
       face_value: 1,
+      sector: "Private Sector Bank",
+      industry: "Banking",
       // Financial statement data for calculations
       total_assets_fq: 2500000000000,
       total_equity_fq: 350000000000,

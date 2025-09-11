@@ -9,6 +9,7 @@ import { type StockData, formatMarketCap } from '@/lib/api';
 import CompanyInfoSection from '@/components/CompanyInfoSection';
 import StockChart from '@/components/StockChart';
 import { QuarterlyResultsTable } from '@/components/QuarterlyResults';
+import { BalanceSheetTable } from '@/components/BalanceSheet';
 
 
 
@@ -325,13 +326,7 @@ function StockDetailPage({ params }: StockDetailPageProps) {
                             currentPrice={stockData.close}
                         />
                         
-                        {/* Quarterly Results Section */}
-                        <QuarterlyResultsTable
-                            symbol={symbol}
-                            companyName={stockData.name}
-                            sector={stockData.sector}
-                            className="mt-8"
-                        />
+                        
                     </div>
 
                     {/* Right Column - Key Metrics */}
@@ -407,6 +402,22 @@ function StockDetailPage({ params }: StockDetailPageProps) {
                         </Card>
                     </div>
                 </div>
+
+                {/* Quarterly Results Section */}
+                        <QuarterlyResultsTable
+                            symbol={symbol}
+                            companyName={stockData.name}
+                            sector={stockData.sector}
+                            className="mt-8"
+                        />
+
+                {/* Balance Sheet Section */}
+                        <BalanceSheetTable
+                            symbol={symbol}
+                            companyName={stockData.name}
+                            sector={stockData.sector}
+                            className="mt-8"
+                        />
             </div>
         </div>
     );

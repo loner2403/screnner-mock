@@ -16,6 +16,13 @@ export function detectCompanyType(
   sector: string | undefined, 
   companyData: InsightSentryQuarterlyResponse
 ): CompanyType {
+  // Highest priority: Check report_type field
+  const reportType = (companyData as any).report_type;
+  if (reportType === 'banking') {
+    console.log('Detected banking company via report_type field');
+    return 'banking';
+  }
+  
   // Primary detection via sector
   if (sector) {
     const sectorLower = sector.toLowerCase();
@@ -24,6 +31,7 @@ export function detectCompanyType(
     );
     
     if (isBanking) {
+      console.log('Detected banking company via sector:', sector);
       return 'banking';
     }
   }
@@ -34,14 +42,28 @@ export function detectCompanyType(
     companyData[field as keyof InsightSentryQuarterlyResponse] !== null
   );
   
-  return hasBankingFields ? 'banking' : 'non-banking';
+  if (hasBankingFields) {
+    console.log('Detected banking company via banking field indicators');
+    return 'banking';
+  }
+  
+  console.log('Detected non-banking company - no banking indicators found');
+  return 'non-banking';
 }
 
 /**
- * Generate quarter information from dates
+ * Generate quarter information from dates, filtered to show data only until June 2025
  */
 export function generateQuarterInfo(dates: string[]): QuarterInfo[] {
-  return dates.map(dateStr => {
+  // Filter dates to only include those until June 2025
+  const maxDate = new Date('2025-06-30'); // June 2025
+  
+  const filteredDates = dates.filter(dateStr => {
+    const date = new Date(dateStr);
+    return date <= maxDate;
+  });
+  
+  return filteredDates.map(dateStr => {
     const date = new Date(dateStr);
     const year = date.getFullYear();
     const month = date.getMonth(); // 0-based
@@ -74,7 +96,7 @@ export function generateQuarterInfo(dates: string[]): QuarterInfo[] {
 }
 
 /**
- * Format currency values in crores
+ * Format currency values in crores (matching the image format)
  */
 export function formatCurrency(value: number | null): FormattedValue {
   if (value === null || value === undefined || isNaN(value)) {
@@ -84,30 +106,21 @@ export function formatCurrency(value: number | null): FormattedValue {
     };
   }
   
-  // Convert to crores (assuming input is in basic currency units)
-  const crores = Math.abs(value) / 10000000; // 1 crore = 10,000,000
+  // Assuming the values are already in the correct scale (matching the mock data)
+  // The API might return values in different scales, so we need to detect this
   const isNegative = value < 0;
   const isZero = value === 0;
+  const absValue = Math.abs(value);
   
   let display: string;
   if (isZero) {
     display = '0';
-  } else if (crores >= 1000) {
-    display = new Intl.NumberFormat('en-IN', {
-      maximumFractionDigits: 0
-    }).format(crores);
-  } else if (crores >= 1) {
-    display = new Intl.NumberFormat('en-IN', {
-      maximumFractionDigits: 0
-    }).format(crores);
   } else {
-    // For values less than 1 crore, show in lakhs or thousands
-    const lakhs = Math.abs(value) / 100000;
-    if (lakhs >= 1) {
-      display = `${lakhs.toFixed(0)}L`;
-    } else {
-      display = `${(Math.abs(value) / 1000).toFixed(0)}K`;
-    }
+    // Format with comma separators (Indian numbering system)
+    display = new Intl.NumberFormat('en-IN', {
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0
+    }).format(absValue);
   }
   
   if (isNegative && !isZero) {
@@ -123,7 +136,7 @@ export function formatCurrency(value: number | null): FormattedValue {
 }
 
 /**
- * Format percentage values
+ * Format percentage values (matching the image format)
  */
 export function formatPercentage(value: number | null): FormattedValue {
   if (value === null || value === undefined || isNaN(value)) {
@@ -136,7 +149,15 @@ export function formatPercentage(value: number | null): FormattedValue {
   const isNegative = value < 0;
   const isZero = value === 0;
   
-  const display = isZero ? '0%' : `${value.toFixed(1)}%`;
+  // Format as integer percentage (no decimal places as shown in image)
+  let display: string;
+  if (isZero) {
+    display = '0%';
+  } else if (isNegative) {
+    display = `${Math.round(value)}%`;
+  } else {
+    display = `${Math.round(value)}%`;
+  }
   
   return {
     display,
@@ -147,7 +168,7 @@ export function formatPercentage(value: number | null): FormattedValue {
 }
 
 /**
- * Format regular numbers (like EPS)
+ * Format regular numbers (like EPS - matching the image format)
  */
 export function formatNumber(value: number | null): FormattedValue {
   if (value === null || value === undefined || isNaN(value)) {
@@ -159,8 +180,19 @@ export function formatNumber(value: number | null): FormattedValue {
   
   const isNegative = value < 0;
   const isZero = value === 0;
+  const absValue = Math.abs(value);
   
-  const display = isZero ? '0.00' : value.toFixed(2);
+  // Format EPS values with 2 decimal places
+  let display: string;
+  if (isZero) {
+    display = '0.00';
+  } else {
+    display = absValue.toFixed(2);
+  }
+  
+  if (isNegative && !isZero) {
+    display = `-${display}`;
+  }
   
   return {
     display,
@@ -194,9 +226,14 @@ export function processQuarterlyData(
   apiData: InsightSentryQuarterlyResponse,
   companyType: CompanyType
 ): ProcessedQuarterlyData {
-  // Generate quarter information
+  // Generate quarter information (already filtered to June 2025)
   const dates = apiData.quarters_info?.dates || [];
   const quarters = generateQuarterInfo(dates);
+  
+  // Calculate how many quarters we need to filter from the original data
+  const originalDatesCount = dates.length;
+  const filteredDatesCount = quarters.length;
+  const quartersToRemove = originalDatesCount - filteredDatesCount;
   
   // Get metric configuration for company type
   const metricConfigs = getMetricConfig(companyType);
@@ -212,6 +249,17 @@ export function processQuarterlyData(
       // Get values from API data
       const rawValues = apiData[config.key as keyof InsightSentryQuarterlyResponse] as number[] | undefined;
       values = rawValues || null;
+    }
+    
+    // Filter the values to match the filtered quarters
+    if (values && quartersToRemove > 0) {
+      // Remove the most recent quarters (from the end) that are beyond June 2025
+      values = values.slice(0, values.length - quartersToRemove);
+    }
+    
+    // Reverse the data to match the quarters order (most recent first)
+    if (values) {
+      values = [...values].reverse();
     }
     
     // Format values based on type

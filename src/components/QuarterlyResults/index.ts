@@ -3,6 +3,7 @@
 export { default as QuarterlyResultsTable } from './QuarterlyResultsTable';
 export { default as BankingMetricsTable } from './BankingMetricsTable';
 export { default as NonBankingMetricsTable } from './NonBankingMetricsTable';
+export { default as EnhancedQuarterlyTable } from './EnhancedQuarterlyTable';
 export { default as QuarterlyResultsHeader } from './QuarterlyResultsHeader';
 export { default as LoadingState } from './LoadingState';
 export { default as ErrorState } from './ErrorState';

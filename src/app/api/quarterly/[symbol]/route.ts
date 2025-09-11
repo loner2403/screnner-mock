@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ApiResponseParser } from '@/lib/api-parser';
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = 'insightsentry.p.rapidapi.com';
 
-// Mock data generation for testing
+// Mock data generation for testing with realistic data matching the image format
 function generateMockQuarterlyData(symbol: string) {
   const isBank = symbol.includes('BANK') || symbol.includes('HDFC') || symbol.includes('ICICI') || symbol.includes('SBIN');
   
-  // Generate 13 quarters of mock data
+  // Generate 13 quarters of data (matching the image)
   const quarters = 13;
   const mockData: any = {};
   
   // Generate quarter dates and periods
   const quarterDates: string[] = [];
   const quarterPeriods: string[] = [];
-  const currentDate = new Date();
+  const currentDate = new Date(2025, 5, 1); // Jun 2025
   
   for (let i = 0; i < quarters; i++) {
     const quarterDate = new Date(currentDate);
@@ -39,35 +40,39 @@ function generateMockQuarterlyData(symbol: string) {
   }
   
   if (isBank) {
-    // Banking mock data
-    mockData.total_revenue_fq_h = Array.from({length: quarters}, (_, i) => 45000 + (i * 1000) + Math.random() * 2000);
-    mockData.interest_income_fq_h = Array.from({length: quarters}, (_, i) => 40000 + (i * 800) + Math.random() * 1500);
-    mockData.total_oper_expense_fq_h = Array.from({length: quarters}, (_, i) => 25000 + (i * 500) + Math.random() * 1000);
-    mockData.interest_income_net_fq_h = Array.from({length: quarters}, (_, i) => 15000 + (i * 300) + Math.random() * 800);
-    mockData.net_interest_margin_fq_h = Array.from({length: quarters}, () => 3.5 + Math.random() * 0.5);
-    mockData.non_interest_income_fq_h = Array.from({length: quarters}, (_, i) => 5000 + (i * 100) + Math.random() * 300);
-    mockData.pretax_income_fq_h = Array.from({length: quarters}, (_, i) => 18000 + (i * 400) + Math.random() * 1000);
-    mockData.net_income_fq_h = Array.from({length: quarters}, (_, i) => 12000 + (i * 300) + Math.random() * 800);
-    mockData.earnings_per_share_basic_fq_h = Array.from({length: quarters}, (_, i) => 10 + (i * 0.5) + Math.random() * 2);
-    mockData.nonperf_loans_loans_gross_fq_h = Array.from({length: quarters}, () => 1.5 + Math.random() * 0.5);
+    console.log(`Generating BANKING mock data for ${symbol} - isBank: ${isBank}`);
+    // Banking mock data with more realistic values
+    mockData.total_revenue_fq_h = [224671, 243134, 203751, 231132, 211952, 238717, 214054, 203033, 190163, 201231, 197714, 217092, 168799];
+    mockData.interest_income_fq_h = mockData.total_revenue_fq_h.map(v => v * 0.85);
+    mockData.total_oper_expense_fq_h = [214198, 221621, 191818, 224544, 202180, 237152, 204815, 194558, 180169, 189692, 194094, 202366, 168360];
+    mockData.interest_income_net_fq_h = mockData.total_revenue_fq_h.map((v, i) => v - mockData.total_oper_expense_fq_h[i]);
+    mockData.net_interest_margin_fq_h = [5, 9, 6, 3, 5, 1, 4, 4, 5, 6, 2, 7, 0];
+    mockData.non_interest_income_fq_h = [780, 954, 818, 794, 1001, 14249, 206, 288, 117, 612, 270, 6046, 992];
+    mockData.pretax_income_fq_h = [11253, 22468, 12752, 7382, 10774, 15813, 9445, 8763, 10111, 12151, 3891, 20772, 1431];
+    mockData.net_income_fq_h = [10955, 19039, 11009, 7723, 10527, 13842, 9434, 8032, 9634, 13189, 7306, 15858, 608];
+    mockData.earnings_per_share_basic_fq_h = [17.32, 30.10, 17.40, 12.22, 16.67, 21.88, 14.97, 12.70, 15.23, 20.86, 11.56, 25.07, 0.95];
+    mockData.nonperf_loans_loans_gross_fq_h = [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4];
+    mockData.loan_loss_allowances_fq_h = Array.from({length: quarters}, () => Math.random() * 1000 + 500);
+    mockData.loans_net_fq_h = Array.from({length: quarters}, () => Math.random() * 100000 + 50000);
     mockData.sector = 'Private Sector Bank';
+    console.log(`Banking mock data generated with sector: ${mockData.sector}`);
   } else {
-    // Non-banking mock data
-    mockData.revenue_fq_h = Array.from({length: quarters}, (_, i) => 15000 + (i * 500) + Math.random() * 1000);
-    mockData.total_oper_expense_fq_h = Array.from({length: quarters}, (_, i) => 12000 + (i * 400) + Math.random() * 800);
-    mockData.oper_income_fq_h = Array.from({length: quarters}, (_, i) => 3500 + (i * 150) + Math.random() * 300);
-    mockData.operating_margin_fq_h = Array.from({length: quarters}, () => 23 + Math.random() * 2);
-    mockData.non_oper_income_fq_h = Array.from({length: quarters}, (_, i) => 200 + Math.random() * 100);
-    mockData.non_oper_interest_income_fq_h = Array.from({length: quarters}, (_, i) => 100 + Math.random() * 50);
-    mockData.depreciation_fq_h = Array.from({length: quarters}, (_, i) => 300 + Math.random() * 50);
-    mockData.pretax_income_fq_h = Array.from({length: quarters}, (_, i) => 3500 + (i * 150) + Math.random() * 300);
-    mockData.net_income_fq_h = Array.from({length: quarters}, (_, i) => 2500 + (i * 100) + Math.random() * 200);
-    mockData.earnings_per_share_basic_fq_h = Array.from({length: quarters}, (_, i) => 10 + (i * 0.5) + Math.random() * 1);
+    // Non-banking mock data matching the image format exactly
+    mockData.revenue_fq_h = [224671, 243134, 203751, 231132, 211952, 238717, 214054, 203033, 190163, 201231, 197714, 217092, 168799];
+    mockData.total_oper_expense_fq_h = [214198, 221621, 191818, 224544, 202180, 237152, 204815, 194558, 180169, 189692, 194094, 202366, 168360];
+    mockData.oper_income_fq_h = [10474, 21514, 11934, 6588, 9773, 1564, 9239, 8475, 9994, 11539, 3620, 14727, 439];
+    mockData.operating_margin_fq_h = [5, 9, 6, 3, 5, 1, 4, 4, 5, 6, 2, 7, 0];
+    mockData.non_oper_income_fq_h = [780, 954, 818, 794, 1001, 14249, 206, 288, 117, 612, 270, 6046, 992];
+    mockData.non_oper_interest_income_fq_h = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    mockData.depreciation_fq_h = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    mockData.pretax_income_fq_h = [11253, 22468, 12752, 7382, 10774, 15813, 9445, 8763, 10111, 12151, 3891, 20772, 1431];
+    mockData.net_income_fq_h = [10955, 19039, 11009, 7723, 10527, 13842, 9434, 8032, 9634, 13189, 7306, 15858, 608];
+    mockData.earnings_per_share_basic_fq_h = [17.32, 30.10, 17.40, 12.22, 16.67, 21.88, 14.97, 12.70, 15.23, 20.86, 11.56, 25.07, 0.95];
     mockData.sector = 'Consumer Goods';
   }
   
   // Common fields
-  mockData.tax_rate_fq_h = Array.from({length: quarters}, () => 25 + Math.random() * 5);
+  mockData.tax_rate_fq_h = [15, 15, 14, 16, 15, 12, 15, 13, 14, 8, -63, 26, 103];
   
   mockData.quarters_info = {
     dates: quarterDates,
@@ -188,51 +193,44 @@ export async function GET(
     const apiResponse = await response.json();
     console.log('API Success - received data keys:', Object.keys(apiResponse));
 
-    // Extract the actual data from the nested structure
-    const rawData = apiResponse.data || apiResponse;
+    // Use ApiResponseParser to handle nested structure
+    const parser = new ApiResponseParser();
     
-    if (!rawData || !Array.isArray(rawData)) {
-      return NextResponse.json(
-        { error: 'Invalid data format received from API', symbol: normalizedSymbol },
-        { status: 404 }
-      );
-    }
-
-    console.log('Raw data length:', rawData.length);
-    console.log('Sample data point:', rawData[0]);
-
-    // Process the data points into the expected format
-    const processedData: any = {};
-    const quarterlyData: { [key: string]: number[] } = {};
-
-    // Extract quarterly data arrays directly
-    rawData.forEach((item: any) => {
-      if (item.id && item.value !== null && item.value !== undefined) {
-        const fieldName = item.id;
-        
-        // Check if this is quarterly data (ends with _fq_h) and value is an array
-        if (fieldName.endsWith('_fq_h') && Array.isArray(item.value)) {
-          // Filter out null values and convert to numbers
-          const cleanValues = item.value
-            .filter((val: any) => val !== null && val !== undefined && !isNaN(parseFloat(val)))
-            .map((val: any) => parseFloat(val));
-          
-          if (cleanValues.length > 0) {
-            quarterlyData[fieldName] = cleanValues;
-          }
-        } else if (!fieldName.endsWith('_fq_h') && !Array.isArray(item.value)) {
-          // Store non-quarterly metadata
-          processedData[fieldName] = item.value;
+    // Check if response has the expected nested structure
+    let processedData: any = {};
+    
+    if (apiResponse.data && Array.isArray(apiResponse.data)) {
+      // Parse the nested response structure
+      const parserResult = parser.parseApiResponse({
+        data: apiResponse.data,
+        metadata: {
+          symbol: normalizedSymbol,
+          sector: apiResponse.sector,
+          industry: apiResponse.industry,
+          lastUpdated: new Date().toISOString()
         }
+      });
+      
+      if (parserResult.errors.length > 0) {
+        console.warn('Parser warnings:', parserResult.errors);
+      }
+      
+      processedData = parserResult.data;
+    } else {
+      // Handle direct response format (backward compatibility)
+      processedData = apiResponse;
+    }
+    
+    console.log('Processed data keys:', Object.keys(processedData));
+    
+    // Extract quarterly data arrays
+    const quarterlyData: { [key: string]: number[] } = {};
+    Object.keys(processedData).forEach(key => {
+      if (key.endsWith('_fq_h') && Array.isArray(processedData[key])) {
+        quarterlyData[key] = processedData[key];
       }
     });
 
-    console.log('Processed quarterly fields:', Object.keys(quarterlyData));
-    console.log('Sample quarterly data lengths:', Object.keys(quarterlyData).slice(0, 3).map(key => 
-      `${key}: ${quarterlyData[key].length} values`
-    ));
-
-    console.log('Processed quarterly fields:', Object.keys(quarterlyData));
 
     // Check if we have any quarterly data
     const hasQuarterlyData = Object.keys(quarterlyData).length > 0;

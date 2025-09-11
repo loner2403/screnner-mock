@@ -3,8 +3,7 @@ import { QuarterlyResultsProps } from './types';
 import QuarterlyResultsHeader from './QuarterlyResultsHeader';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
-import BankingMetricsTable from './BankingMetricsTable';
-import NonBankingMetricsTable from './NonBankingMetricsTable';
+import EnhancedQuarterlyTable from './EnhancedQuarterlyTable';
 import { useQuarterlyData } from './hooks';
 
 const QuarterlyResultsTable: React.FC<QuarterlyResultsProps> = ({
@@ -62,24 +61,20 @@ const QuarterlyResultsTable: React.FC<QuarterlyResultsProps> = ({
   };
 
   return (
-    <div className={`quarterly-results-section ${className}`}>
+    <div className={`quarterly-results-section w-full ${className}`}>
       <QuarterlyResultsHeader
         hasProductSegments={data.hasProductSegments}
         onProductSegmentsClick={handleProductSegmentsClick}
       />
 
-      {/* Render appropriate table based on company type */}
-      {data.companyType === 'banking' ? (
-        <BankingMetricsTable
+      {/* Render enhanced quarterly table */}
+      <div className="w-full">
+        <EnhancedQuarterlyTable
           quarters={data.quarters}
           metrics={data.rows}
+          companyType={data.companyType}
         />
-      ) : (
-        <NonBankingMetricsTable
-          quarters={data.quarters}
-          metrics={data.rows}
-        />
-      )}
+      </div>
 
       {/* Data freshness indicator */}
       <div className="mt-4 text-xs text-gray-500 text-right">

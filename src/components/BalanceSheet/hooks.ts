@@ -1,42 +1,42 @@
-// Custom hooks for quarterly results data fetching
+// Custom hooks for balance sheet data fetching
 import { useState, useEffect, useCallback } from 'react';
-import { fetchQuarterlyData } from '@/lib/api';
+import { fetchBalanceSheetData } from '@/lib/api';
 import { 
-  ProcessedQuarterlyData, 
-  QuarterlyResultsError, 
-  InsightSentryQuarterlyResponse 
+  ProcessedBalanceSheetData, 
+  BalanceSheetError, 
+  InsightSentryBalanceSheetResponse 
 } from './types';
-import { detectCompanyType, processQuarterlyData, validateApiResponse } from './utils';
+import { detectCompanyType, processBalanceSheetData, validateApiResponse } from './utils';
 
-interface UseQuarterlyDataResult {
-  data: ProcessedQuarterlyData | null;
+interface UseBalanceSheetDataResult {
+  data: ProcessedBalanceSheetData | null;
   loading: boolean;
-  error: QuarterlyResultsError | null;
+  error: BalanceSheetError | null;
   refetch: () => void;
 }
 
-// Cache for quarterly data to avoid repeated API calls
+// Cache for balance sheet data to avoid repeated API calls
 const dataCache = new Map<string, {
-  data: ProcessedQuarterlyData;
+  data: ProcessedBalanceSheetData;
   timestamp: number;
 }>();
 
 const CACHE_DURATION = 10 * 1000; // 10 seconds for testing
 
-export function useQuarterlyData(
+export function useBalanceSheetData(
   symbol: string, 
   sector?: string
-): UseQuarterlyDataResult {
-  const [data, setData] = useState<ProcessedQuarterlyData | null>(null);
+): UseBalanceSheetDataResult {
+  const [data, setData] = useState<ProcessedBalanceSheetData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<QuarterlyResultsError | null>(null);
+  const [error, setError] = useState<BalanceSheetError | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!symbol) {
       setError({
         type: 'invalid-data',
         message: 'Symbol is required',
-        details: 'No symbol provided for quarterly data fetch'
+        details: 'No symbol provided for balance sheet data fetch'
       });
       setLoading(false);
       return;
@@ -44,7 +44,7 @@ export function useQuarterlyData(
 
     // Clear cache for HDFCBANK for testing
     if (symbol.toUpperCase().includes('HDFCBANK')) {
-      console.log('Clearing cache for', symbol);
+      console.log('Clearing balance sheet cache for', symbol);
       dataCache.clear();
     }
 
@@ -54,7 +54,7 @@ export function useQuarterlyData(
     const now = Date.now();
 
     if (cached && (now - cached.timestamp) < CACHE_DURATION) {
-      console.log('Using cached quarterly data for', symbol);
+      console.log('Using cached balance sheet data for', symbol);
       setData(cached.data);
       setLoading(false);
       setError(null);
@@ -65,8 +65,8 @@ export function useQuarterlyData(
     setError(null);
 
     try {
-      console.log('Fetching quarterly data for', symbol);
-      const apiResponse = await fetchQuarterlyData(symbol);
+      console.log('Fetching balance sheet data for', symbol);
+      const apiResponse = await fetchBalanceSheetData(symbol);
 
       // Validate API response
       if (!validateApiResponse(apiResponse)) {
@@ -96,7 +96,7 @@ export function useQuarterlyData(
       console.log('Detected company type:', companyType, 'for symbol:', symbol, 'with effective sector:', effectiveSector);
 
       // Process the data
-      const processedData = processQuarterlyData(apiResponse, companyType);
+      const processedData = processBalanceSheetData(apiResponse, companyType);
 
       // Cache the processed data
       dataCache.set(cacheKey, {
@@ -108,10 +108,10 @@ export function useQuarterlyData(
       setError(null);
 
     } catch (err) {
-      console.error('Error fetching quarterly data:', err);
+      console.error('Error fetching balance sheet data:', err);
       
-      let errorType: QuarterlyResultsError['type'] = 'network';
-      let errorMessage = 'Failed to load quarterly data';
+      let errorType: BalanceSheetError['type'] = 'network';
+      let errorMessage = 'Failed to load balance sheet data';
       let errorDetails = '';
 
       if (err instanceof Error) {
@@ -119,7 +119,7 @@ export function useQuarterlyData(
         
         if (err.message.includes('not found') || err.message.includes('404')) {
           errorType = 'not-found';
-          errorMessage = 'Quarterly data not available for this company';
+          errorMessage = 'Balance sheet data not available for this company';
         } else if (err.message.includes('rate limit') || err.message.includes('429')) {
           errorType = 'network';
           errorMessage = 'Too many requests. Please try again later.';
@@ -161,11 +161,11 @@ export function useQuarterlyData(
   };
 }
 
-// Hook for managing multiple quarterly data requests (for comparison)
-export function useMultipleQuarterlyData(symbols: string[], sector?: string) {
-  const [dataMap, setDataMap] = useState<Map<string, ProcessedQuarterlyData>>(new Map());
+// Hook for managing multiple balance sheet data requests (for comparison)
+export function useMultipleBalanceSheetData(symbols: string[], sector?: string) {
+  const [dataMap, setDataMap] = useState<Map<string, ProcessedBalanceSheetData>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [errors, setErrors] = useState<Map<string, QuarterlyResultsError>>(new Map());
+  const [errors, setErrors] = useState<Map<string, BalanceSheetError>>(new Map());
 
   const fetchMultipleData = useCallback(async () => {
     if (symbols.length === 0) {
@@ -174,17 +174,17 @@ export function useMultipleQuarterlyData(symbols: string[], sector?: string) {
     }
 
     setLoading(true);
-    const newDataMap = new Map<string, ProcessedQuarterlyData>();
-    const newErrors = new Map<string, QuarterlyResultsError>();
+    const newDataMap = new Map<string, ProcessedBalanceSheetData>();
+    const newErrors = new Map<string, BalanceSheetError>();
 
     await Promise.allSettled(
       symbols.map(async (symbol) => {
         try {
-          const apiResponse = await fetchQuarterlyData(symbol);
+          const apiResponse = await fetchBalanceSheetData(symbol);
           
           if (validateApiResponse(apiResponse)) {
             const companyType = detectCompanyType(sector, apiResponse);
-            const processedData = processQuarterlyData(apiResponse, companyType);
+            const processedData = processBalanceSheetData(apiResponse, companyType);
             newDataMap.set(symbol, processedData);
           }
         } catch (err) {
@@ -215,9 +215,9 @@ export function useMultipleQuarterlyData(symbols: string[], sector?: string) {
 }
 
 // Clear all cached data (useful for memory management)
-export function clearQuarterlyDataCache(): void {
+export function clearBalanceSheetDataCache(): void {
   dataCache.clear();
-  console.log('Quarterly data cache cleared');
+  console.log('Balance sheet data cache cleared');
 }
 
 // Get cache statistics

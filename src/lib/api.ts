@@ -217,3 +217,33 @@ export async function fetchQuarterlyData(symbol: string): Promise<QuarterlyDataR
         throw error;
     }
 }
+
+// Balance sheet data response interface
+export interface BalanceSheetDataResponse {
+    [key: string]: any;
+    sector?: string;
+    industry?: string;
+    company_type?: string;
+}
+
+// Fetch balance sheet data for a specific symbol
+export async function fetchBalanceSheetData(symbol: string): Promise<BalanceSheetDataResponse> {
+    try {
+        const response = await fetch(`/api/balancesheet/${symbol}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching balance sheet data:', error);
+        throw error;
+    }
+}

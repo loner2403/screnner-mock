@@ -10,6 +10,7 @@ import CompanyInfoSection from '@/components/CompanyInfoSection';
 import StockChart from '@/components/StockChart';
 import { QuarterlyResultsTable } from '@/components/QuarterlyResults';
 import { BalanceSheetTable } from '@/components/BalanceSheet';
+import ProfitAndLossTable from '@/components/ProfitAndLoss';
 
 
 
@@ -413,6 +414,14 @@ function StockDetailPage({ params }: StockDetailPageProps) {
 
                 {/* Balance Sheet Section */}
                         <BalanceSheetTable
+                            symbol={symbol}
+                            companyName={stockData.name}
+                            sector={stockData.sector}
+                            className="mt-8"
+                        />
+
+                {/* Profit and Loss Section */}
+                        <ProfitAndLossTable
                             symbol={symbol}
                             companyName={stockData.name}
                             sector={stockData.sector}

@@ -53,6 +53,7 @@ export interface InsightSentryBalanceSheetResponse {
   total_liabilities_fy_h?: number[];
   total_equity_fy_h?: number[];
   common_stock_par_fy_h?: number[];
+  common_equity_total_fy_h?: number[];
   retained_earnings_fy_h?: number[];
   total_debt_fy_h?: number[];
   long_term_debt_fy_h?: number[];
@@ -63,6 +64,8 @@ export interface InsightSentryBalanceSheetResponse {
   long_term_other_assets_total_fy_h?: number[];
   cash_n_equivalents_fy_h?: number[];
   total_inventory_fy_h?: number[];
+  cwip_fy_h?: number[];
+  other_liabilities_total_fy_h?: number[];
   
   // Banking-specific annual historical fields
   total_deposits_fy_h?: number[];

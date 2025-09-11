@@ -247,3 +247,33 @@ export async function fetchBalanceSheetData(symbol: string): Promise<BalanceShee
         throw error;
     }
 }
+
+// Profit and Loss data response interface
+export interface ProfitAndLossDataResponse {
+    [key: string]: any;
+    sector?: string;
+    industry?: string;
+    company_type?: string;
+}
+
+// Fetch Profit and Loss data for a specific symbol
+export async function fetchProfitAndLossData(symbol: string): Promise<ProfitAndLossDataResponse> {
+    try {
+        const response = await fetch(`/api/profit-and-loss/${symbol}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching profit and loss data:', error);
+        throw error;
+    }
+}

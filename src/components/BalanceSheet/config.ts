@@ -1,40 +1,30 @@
 // Metric configurations for banking and non-banking companies
 import { MetricConfig, CompanyType, InsightSentryBalanceSheetResponse } from './types';
 
-// Banking-specific balance sheet configuration (using actual API fields from hdfc-bank-data-mapping.md)
+// Banking-specific balance sheet configuration (matching API response fields)
 export const BANKING_METRICS: MetricConfig[] = [
-  // Equity section
   { key: 'common_stock_par_fy_h', label: 'Equity Capital', type: 'currency' },
-  { key: 'retained_earnings_fy_h', label: 'Reserves', type: 'currency' },
-  
-  // Liabilities section - Banking specific
-  { key: 'total_deposits_fy_h', label: 'Deposits', type: 'currency' },
+  { key: 'common_equity_total_fy_h', label: 'Reserves', type: 'currency' },
+  { key: '', label: 'Deposits', type: 'currency' },
   { key: 'total_debt_fy_h', label: 'Borrowings', type: 'currency' },
   { key: 'other_liabilities_total_fy_h', label: 'Other Liabilities +', type: 'currency' },
   { key: 'total_liabilities_fy_h', label: 'Total Liabilities', type: 'currency' },
-  
-  // Assets section
   { key: 'ppe_total_net_fy_h', label: 'Fixed Assets +', type: 'currency' },
-  { key: 'cwip_fy_h', label: 'CWIP', type: 'currency' }, // Not available in API - shows zeros
+  { key: 'cwip_fy_h', label: 'CWIP', type: 'currency' },
   { key: 'long_term_investments_fy_h', label: 'Investments', type: 'currency' },
   { key: 'long_term_other_assets_total_fy_h', label: 'Other Assets +', type: 'currency' },
   { key: 'total_assets_fy_h', label: 'Total Assets', type: 'currency' }
 ];
 
-// Non-banking balance sheet configuration (using actual API fields from historical_data_mapping.md)
+// Non-banking balance sheet configuration (using same fields as available in API)
 export const NON_BANKING_METRICS: MetricConfig[] = [
-  // Equity section
   { key: 'common_stock_par_fy_h', label: 'Equity Capital', type: 'currency' },
-  { key: 'retained_earnings_fy_h', label: 'Reserves', type: 'currency' },
-  
-  // Liabilities section - Non-banking
+  { key: 'common_equity_total_fy_h', label: 'Reserves', type: 'currency' },
   { key: 'total_debt_fy_h', label: 'Borrowings', type: 'currency' },
-  { key: 'total_current_liabilities_fy_h', label: 'Other Liabilities +', type: 'currency' },
+  { key: 'other_liabilities_total_fy_h', label: 'Other Liabilities +', type: 'currency' },
   { key: 'total_liabilities_fy_h', label: 'Total Liabilities', type: 'currency' },
-  
-  // Assets section
   { key: 'ppe_total_net_fy_h', label: 'Fixed Assets +', type: 'currency' },
-  { key: 'cwip_fy_h', label: 'CWIP', type: 'currency' }, // Not available in API - shows zeros
+  { key: 'cwip_fy_h', label: 'CWIP', type: 'currency' },
   { key: 'long_term_investments_fy_h', label: 'Investments', type: 'currency' },
   { key: 'long_term_other_assets_total_fy_h', label: 'Other Assets +', type: 'currency' },
   { key: 'total_assets_fy_h', label: 'Total Assets', type: 'currency' }

@@ -14,6 +14,34 @@ export interface MetricRow {
   rawValues?: (number | null)[];
 }
 
+// Growth metrics data structure
+export interface GrowthMetrics {
+  compoundedSalesGrowth: {
+    '10Years': number;
+    '5Years': number;
+    '3Years': number;
+    'TTM': number;
+  };
+  compoundedProfitGrowth: {
+    '10Years': number;
+    '5Years': number;
+    '3Years': number;
+    'TTM': number;
+  };
+  stockPriceCAGR: {
+    '10Years': number;
+    '5Years': number;
+    '3Years': number;
+    '1Year': number;
+  };
+  returnOnEquity: {
+    '10Years': number;
+    '5Years': number;
+    '3Years': number;
+    'LastYear': number;
+  };
+}
+
 // Defines the shape of the processed data for the Profit & Loss table
 export interface ProcessedProfitAndLossData {
   years: string[];
@@ -21,6 +49,7 @@ export interface ProcessedProfitAndLossData {
   companyType: CompanyType;
   lastUpdated: string;
   hasProductSegments: boolean; // Example additional property
+  growthMetrics?: GrowthMetrics; // Optional growth metrics
 }
 
 // Configuration for a single metric in the table

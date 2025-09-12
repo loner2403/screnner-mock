@@ -119,6 +119,110 @@ const BankingProfitAndLossTable: React.FC<Props> = ({ data }) => {
           </tbody>
         </table>
       </div>
+
+      {/* Growth Metrics Section */}
+      {data.growthMetrics && (
+        <div className="mt-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Growth & Performance Metrics</h3>
+          </div>
+          <div className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Compounded Sales Growth */}
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
+                <h4 className="text-sm font-semibold text-blue-800 mb-3">Compounded Sales Growth</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-blue-600">10 Years:</span>
+                    <span className="text-sm font-medium text-blue-800">{data.growthMetrics.compoundedSalesGrowth['10Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-blue-600">5 Years:</span>
+                    <span className="text-sm font-medium text-blue-800">{data.growthMetrics.compoundedSalesGrowth['5Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-blue-600">3 Years:</span>
+                    <span className="text-sm font-medium text-blue-800">{data.growthMetrics.compoundedSalesGrowth['3Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-blue-600">TTM:</span>
+                    <span className="text-sm font-medium text-blue-800">{data.growthMetrics.compoundedSalesGrowth.TTM}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Compounded Profit Growth */}
+              <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+                <h4 className="text-sm font-semibold text-green-800 mb-3">Compounded Profit Growth</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-green-600">10 Years:</span>
+                    <span className="text-sm font-medium text-green-800">{data.growthMetrics.compoundedProfitGrowth['10Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-green-600">5 Years:</span>
+                    <span className="text-sm font-medium text-green-800">{data.growthMetrics.compoundedProfitGrowth['5Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-green-600">3 Years:</span>
+                    <span className="text-sm font-medium text-green-800">{data.growthMetrics.compoundedProfitGrowth['3Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-green-600">TTM:</span>
+                    <span className="text-sm font-medium text-green-800">{data.growthMetrics.compoundedProfitGrowth.TTM}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stock Price CAGR */}
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
+                <h4 className="text-sm font-semibold text-purple-800 mb-3">Stock Price CAGR</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-purple-600">10 Years:</span>
+                    <span className="text-sm font-medium text-purple-800">{data.growthMetrics.stockPriceCAGR['10Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-purple-600">5 Years:</span>
+                    <span className="text-sm font-medium text-purple-800">{data.growthMetrics.stockPriceCAGR['5Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-purple-600">3 Years:</span>
+                    <span className="text-sm font-medium text-purple-800">{data.growthMetrics.stockPriceCAGR['3Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-purple-600">1 Year:</span>
+                    <span className="text-sm font-medium text-purple-800">{data.growthMetrics.stockPriceCAGR['1Year']}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Return on Equity */}
+              <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
+                <h4 className="text-sm font-semibold text-orange-800 mb-3">Return on Equity</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-orange-600">10 Years:</span>
+                    <span className="text-sm font-medium text-orange-800">{data.growthMetrics.returnOnEquity['10Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-orange-600">5 Years:</span>
+                    <span className="text-sm font-medium text-orange-800">{data.growthMetrics.returnOnEquity['5Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-orange-600">3 Years:</span>
+                    <span className="text-sm font-medium text-orange-800">{data.growthMetrics.returnOnEquity['3Years']}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-orange-600">Last Year:</span>
+                    <span className="text-sm font-medium text-orange-800">{data.growthMetrics.returnOnEquity.LastYear}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Footer Notes */}
       <div className="mt-3 space-y-1">

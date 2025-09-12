@@ -41,7 +41,7 @@ interface ChartDataResponse {
 
 // Note: TechnicalIndicators interface reserved for future use
 
-type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '2Y' | '5Y';
+type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '2Y' | '3Y' | '5Y';
 
 // Environment variables
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
@@ -109,7 +109,28 @@ const getDateRange = (timeframe: TimeFrame): { from: string; to: string } => {
     };
 };
 
-// Primary API: RapidAPI (Yahoo Finance)
+// Helper function to get bar_type based on timeframe
+const getBarType = (timeframe: TimeFrame): string => {
+    switch (timeframe) {
+        case '1D':
+            return 'minute';
+        case '1W':
+            return 'hour';
+        case '1M':
+            return 'day';
+        case '3M':
+        case '6M':
+        case '1Y':
+            return 'day';
+        case '2Y':
+        case '5Y':
+            return 'week';
+        default:
+            return 'day';
+    }
+};
+
+// Primary API: InsightSentry (via RapidAPI)
 const fetchFromRapidAPI = async (symbol: string, timeframe: TimeFrame): Promise<ChartDataResponse | null> => {
     if (!RAPIDAPI_KEY) {
         console.warn('RAPIDAPI_KEY not configured');
@@ -117,49 +138,132 @@ const fetchFromRapidAPI = async (symbol: string, timeframe: TimeFrame): Promise<
     }
 
     try {
-        const normalizedSymbol = normalizeSymbol(symbol);
-        // Note: Date range calculation reserved for future filtering implementation
+        // Construct the full symbol with exchange prefix
+        const fullSymbol = symbol.includes(':') ? symbol : `NSE:${symbol}`;
+        const barType = getBarType(timeframe);
+        
+        // Calculate date range for the timeframe
+        const now = new Date();
+        let fromDate = new Date();
+        
+        switch (timeframe) {
+            case '1D':
+                fromDate = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+                break;
+            case '1W':
+                fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+            case '1M':
+                fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                break;
+            case '3M':
+                fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                break;
+            case '6M':
+                fromDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+                break;
+            case '1Y':
+                fromDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+                break;
+            case '2Y':
+                fromDate = new Date(now.getTime() - 2 * 365 * 24 * 60 * 60 * 1000);
+                break;
+            case '3Y':
+                fromDate = new Date(now.getTime() - 3 * 365 * 24 * 60 * 60 * 1000);
+                break;
+            case '5Y':
+                fromDate = new Date(now.getTime() - 5 * 365 * 24 * 60 * 60 * 1000);
+                break;
+            default:
+                fromDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        }
+        
+        // Build the URL with query parameters including date range
+        const url = new URL(`https://insightsentry.p.rapidapi.com/v2/symbols/${fullSymbol}/history`);
+        url.searchParams.append('bar_type', barType);
+        url.searchParams.append('bar_interval', '1');
+        url.searchParams.append('extended', 'true');
+        url.searchParams.append('badj', 'true');
+        url.searchParams.append('dadj', 'false');
+        
+        // Add date range parameters if the API supports them
+        const fromTimestamp = Math.floor(fromDate.getTime() / 1000);
+        const toTimestamp = Math.floor(now.getTime() / 1000);
+        url.searchParams.append('from', fromTimestamp.toString());
+        url.searchParams.append('to', toTimestamp.toString());
 
-        // Use Yahoo Finance API via RapidAPI
-        const url = `https://yahoo-finance15.p.rapidapi.com/api/yahoo/hi/history/${normalizedSymbol}.NS`;
-
-        const response = await fetch(url, {
+        const response = await fetch(url.toString(), {
             method: 'GET',
             headers: {
                 'X-RapidAPI-Key': RAPIDAPI_KEY,
-                'X-RapidAPI-Host': 'yahoo-finance15.p.rapidapi.com'
+                'X-RapidAPI-Host': 'insightsentry.p.rapidapi.com'
             }
         });
 
         if (!response.ok) {
-            console.warn(`RapidAPI request failed: ${response.status}`);
+            console.warn(`InsightSentry API request failed: ${response.status}`);
             return null;
         }
 
         const data = await response.json();
 
-        if (!data.body || !Array.isArray(data.body)) {
-            console.warn('Invalid data format from RapidAPI');
+        // Check if we have valid data structure
+        if (!data || (!data.series && !data.candles)) {
+            console.warn('Invalid data format from InsightSentry API:', data);
             return null;
         }
 
         // Transform the data to our format
-        const ohlcvData: OHLCVData[] = data.body
-            .filter((item: RapidAPIItem) => item.date && item.open && item.high && item.low && item.close)
-            .map((item: RapidAPIItem) => ({
-                timestamp: new Date(item.date).getTime(),
-                open: parseFloat(String(item.open)),
-                high: parseFloat(String(item.high)),
-                low: parseFloat(String(item.low)),
-                close: parseFloat(String(item.close)),
-                volume: parseInt(String(item.volume)) || 0,
-                date: new Date(item.date).toISOString()
-            }))
+        // Check if data has series array (InsightSentry format)
+        const seriesData = data.series || data.candles || [];
+        
+        const ohlcvData: OHLCVData[] = seriesData
+            .filter((item: any) => item && (item.time || item[0]))
+            .map((item: any) => {
+                let timestamp, open, high, low, close, volume;
+                
+                if (Array.isArray(item)) {
+                    // Array format: [timestamp, open, high, low, close, volume]
+                    timestamp = item[0];
+                    open = item[1];
+                    high = item[2];
+                    low = item[3];
+                    close = item[4];
+                    volume = item[5];
+                } else {
+                    // Object format: {time, open, high, low, close, volume}
+                    timestamp = item.time;
+                    open = item.open;
+                    high = item.high;
+                    low = item.low;
+                    close = item.close;
+                    volume = item.volume;
+                }
+                
+                const date = new Date(timestamp * 1000); // Convert from seconds to milliseconds
+                
+                return {
+                    timestamp: timestamp * 1000,
+                    open: parseFloat(String(open)),
+                    high: parseFloat(String(high)),
+                    low: parseFloat(String(low)),
+                    close: parseFloat(String(close)),
+                    volume: parseInt(String(volume)) || 0,
+                    date: date.toISOString()
+                };
+            })
             .sort((a: OHLCVData, b: OHLCVData) => a.timestamp - b.timestamp);
 
+        // Client-side filtering as fallback if API doesn't respect date range
+        const filteredData = ohlcvData.filter(item => {
+            return item.timestamp >= fromTimestamp * 1000 && item.timestamp <= toTimestamp * 1000;
+        });
+
+        const normalizedSymbol = normalizeSymbol(symbol);
+        
         return {
             symbol: normalizedSymbol,
-            data: ohlcvData,
+            data: filteredData.length > 0 ? filteredData : ohlcvData,
             metadata: {
                 exchange: 'NSE',
                 currency: 'INR',
@@ -168,7 +272,7 @@ const fetchFromRapidAPI = async (symbol: string, timeframe: TimeFrame): Promise<
             }
         };
     } catch (error) {
-        console.error('Error fetching from RapidAPI:', error);
+        console.error('Error fetching from InsightSentry API:', error);
         return null;
     }
 };
@@ -329,7 +433,7 @@ export async function GET(
         // Note: indicators parameter reserved for future technical analysis implementation
 
         // Validate timeframe
-        const validTimeframes: TimeFrame[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y'];
+        const validTimeframes: TimeFrame[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '3Y', '5Y'];
         if (!validTimeframes.includes(timeframe)) {
             return NextResponse.json(
                 { error: 'Invalid timeframe. Valid options: ' + validTimeframes.join(', ') },

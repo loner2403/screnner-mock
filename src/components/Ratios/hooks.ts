@@ -1,39 +1,42 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchProfitAndLossData } from '@/lib/api';
-import { 
-  ProcessedProfitAndLossData, 
-  ProfitAndLossResultsError, 
-} from './types';
-import { detectCompanyType, processProfitAndLossData, validateApiResponse } from './utils';
+// src/components/Ratios/hooks.ts
 
-interface UseProfitAndLossDataResult {
-  data: ProcessedProfitAndLossData | null;
+import { useState, useEffect, useCallback } from 'react';
+import { fetchRatiosData } from '@/lib/api';
+import { 
+  ProcessedRatiosData, 
+  RatiosError, 
+  InsightSentryRatiosResponse 
+} from './types';
+import { detectCompanyType, processRatiosData, validateApiResponse } from './utils';
+
+interface UseRatiosDataResult {
+  data: ProcessedRatiosData | null;
   loading: boolean;
-  error: ProfitAndLossResultsError | null;
+  error: RatiosError | null;
   refetch: () => void;
 }
 
 const dataCache = new Map<string, {
-  data: ProcessedProfitAndLossData;
+  data: ProcessedRatiosData;
   timestamp: number;
 }>();
 
-const CACHE_DURATION = 0 * 1000; // 0 second for immediate testing
+const CACHE_DURATION = 10 * 1000; // 10 seconds
 
-export function useProfitAndLossData(
+export function useRatiosData(
   symbol: string, 
   sector?: string
-): UseProfitAndLossDataResult {
-  const [data, setData] = useState<ProcessedProfitAndLossData | null>(null);
+): UseRatiosDataResult {
+  const [data, setData] = useState<ProcessedRatiosData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ProfitAndLossResultsError | null>(null);
+  const [error, setError] = useState<RatiosError | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!symbol) {
       setError({
         type: 'invalid-data',
         message: 'Symbol is required',
-        details: 'No symbol provided for profit and loss data fetch'
+        details: 'No symbol provided for ratios data fetch'
       });
       setLoading(false);
       return;
@@ -54,24 +57,18 @@ export function useProfitAndLossData(
     setError(null);
 
     try {
-      const apiResponse = await fetchProfitAndLossData(symbol);
+      const apiResponse = await fetchRatiosData(symbol);
 
       if (!validateApiResponse(apiResponse)) {
-        throw new Error('Invalid API response format');
+        throw new Error('Invalid API response format for ratios');
       }
-      
-      // Extract sector from API response if not provided
-      let effectiveSector = sector;
-      if (!effectiveSector && Array.isArray(apiResponse)) {
-        const sectorField = apiResponse.find(item => item.id === 'sector-i18n-en' || item.id === 'sector');
-        if (sectorField) {
-          effectiveSector = sectorField.value;
-        }
-      }
+
+      const apiSector = (apiResponse as any)['sector-i18n-en'] || (apiResponse as any).sector;
+      const effectiveSector = apiSector || sector;
       
       const companyType = detectCompanyType(effectiveSector, apiResponse);
 
-      const processedData = processProfitAndLossData(apiResponse, companyType);
+      const processedData = processRatiosData(apiResponse, companyType);
 
       dataCache.set(cacheKey, {
         data: processedData,
@@ -82,19 +79,15 @@ export function useProfitAndLossData(
       setError(null);
 
     } catch (err) {
-      let errorType: ProfitAndLossResultsError['type'] = 'network';
-      let errorMessage = 'Failed to load profit and loss data';
+      let errorType: RatiosError['type'] = 'network';
+      let errorMessage = 'Failed to load ratios data';
       let errorDetails = '';
 
       if (err instanceof Error) {
         errorDetails = err.message;
-        
-        if (err.message.includes('not found') || err.message.includes('404')) {
+        if (err.message.includes('not found')) {
           errorType = 'not-found';
-          errorMessage = 'Profit and loss data not available for this company';
-        } else if (err.message.includes('Invalid API response')) {
-          errorType = 'invalid-data';
-          errorMessage = 'Invalid data format received';
+          errorMessage = 'Ratios data not available for this company';
         }
       }
 

@@ -11,6 +11,8 @@ import StockChart from '@/components/StockChart';
 import { QuarterlyResultsTable } from '@/components/QuarterlyResults';
 import { BalanceSheetTable } from '@/components/BalanceSheet';
 import ProfitAndLossTable from '@/components/ProfitAndLoss';
+import { CashFlowTable } from '@/components/CashFlow';
+import { RatiosTable } from '@/components/Ratios';
 
 
 
@@ -427,6 +429,22 @@ function StockDetailPage({ params }: StockDetailPageProps) {
                             sector={stockData.sector}
                             className="mt-8"
                         />
+
+                {/* Cash Flow Section */}
+                        '''                        <CashFlowTable
+                            symbol={symbol}
+                            companyName={stockData.name}
+                            sector={stockData.sector}
+                            className="mt-8"
+                        />
+
+                {/* Ratios Section */}
+                        <RatiosTable
+                            symbol={symbol}
+                            companyName={stockData.name}
+                            sector={stockData.sector}
+                            className="mt-8"
+                        />'''
             </div>
         </div>
     );

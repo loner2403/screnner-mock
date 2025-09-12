@@ -71,6 +71,9 @@ export interface InsightSentryRatiosResponse {
   // Efficiency Ratios
   asset_turnover_fy_h?: number[];
   invent_turnover_fy_h?: number[];
+  receivables_turnover_fy_h?: number[];
+  accounts_receivables_net_fy_h?: number[];
+  total_revenue_fy_h?: number[];
   
   // Valuation Ratios
   price_earnings_fy_h?: number[];

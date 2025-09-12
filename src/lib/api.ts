@@ -248,7 +248,7 @@ export async function fetchBalanceSheetData(symbol: string): Promise<BalanceShee
     }
 }
 
-// Profit and Loss data response interface
+
 export interface ProfitAndLossDataResponse {
     [key: string]: any;
     sector?: string;
@@ -277,3 +277,34 @@ export async function fetchProfitAndLossData(symbol: string): Promise<ProfitAndL
         throw error;
     }
 }
+
+// Ratios data response interface
+export interface RatiosDataResponse {
+    [key: string]: any;
+    sector?: string;
+    industry?: string;
+    company_type?: string;
+}
+
+// Fetch Ratios data for a specific symbol
+export async function fetchRatiosData(symbol: string): Promise<RatiosDataResponse> {
+    try {
+        const response = await fetch(`/api/ratios/${symbol}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching ratios data:', error);
+        throw error;
+    }
+}
+''

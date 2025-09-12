@@ -63,16 +63,12 @@ export const BANKING_PROFIT_LOSS_METRICS: MetricConfig[] = [
 // Non-banking metric configuration for Profit & Loss
 export const NON_BANKING_PROFIT_LOSS_METRICS: MetricConfig[] = [
   { key: 'revenue_fy_h', label: 'Sales', type: 'currency' },
-  { key: 'cost_of_goods_fy_h', label: 'Cost of Goods', type: 'currency' },
-  { key: 'gross_profit_fy_h', label: 'Gross Profit', type: 'currency' },
-  { key: 'gross_margin_fy_h', label: 'Gross Margin %', type: 'percentage' },
-  { key: 'operating_expenses_fy_h', label: 'Operating Expenses', type: 'currency' },
-  { key: 'oper_income_fy_h', label: 'Operating Profit', type: 'currency' },
-  { key: 'operating_margin_fy_h', label: 'Operating Margin %', type: 'percentage' },
-  { key: 'non_oper_income_fy_h', label: 'Other Income', type: 'currency' },
+  { key: 'cost_of_goods_fy_h', label: 'Expenses', type: 'currency' },
+  { key: 'gross_profit_fy_h', label: 'Operating Profit', type: 'currency' },
+  { key: 'gross_margin_fy_h', label: 'OPM %', type: 'percentage' },
+  { key: 'other_income_fy_h', label: 'Other Income', type: 'currency' },
+  { key: 'interest_expense_fy_h', label: 'Interest', type: 'currency' },
   { key: 'depreciation_fy_h', label: 'Depreciation', type: 'currency' },
-  { key: 'ebit_fy_h', label: 'EBIT', type: 'currency' },
-  { key: 'non_oper_interest_income_fy_h', label: 'Interest Income', type: 'currency' },
   { key: 'pretax_income_fy_h', label: 'Profit Before Tax', type: 'currency' },
   {
     label: 'Tax %',
@@ -95,9 +91,10 @@ export const NON_BANKING_PROFIT_LOSS_METRICS: MetricConfig[] = [
       return result;
     }
   },
-  { key: 'income_tax_fy_h', label: 'Tax', type: 'currency' },
+  
+  
+  
   { key: 'net_income_fy_h', label: 'Net Profit', type: 'currency' },
-  { key: 'net_margin_fy_h', label: 'Net Margin %', type: 'percentage' },
   { 
     key: 'earnings_per_share_basic_fy_h', 
     label: 'EPS (Basic)', 

@@ -108,43 +108,199 @@ export const NON_BANKING_BALANCE_SHEET_METRICS: MetricConfig[] = [
   
   // Current Liabilities
   { label: 'Current Liabilities', type: 'section', isSection: true, level: 1 },
-  { key: 'short_term_debt_fy_h', label: 'Short-term borrowings & current portion of LT debt', type: 'currency' },
+  {
+    label: 'Short-term borrowings & current portion of LT debt',
+    type: 'currency',
+    calculation: (dataMap) => {
+      const shortTermDebt = dataMap.get('short_term_debt_fy_h') || [];
+      const shortTermExclCurrent = dataMap.get('short_term_debt_excl_current_port_fy_h') || [];
+      const currentPortDebt = dataMap.get('current_port_debt_capital_leases_fy_h') || [];
+
+      const maxLength = Math.max(shortTermDebt.length, shortTermExclCurrent.length, currentPortDebt.length);
+      const result = [];
+      for (let i = 0; i < maxLength; i++) {
+        const shortTermValue = shortTermDebt[i] || 0;
+        const shortTermExclValue = shortTermExclCurrent[i] || 0;
+        const currentPortValue = currentPortDebt[i] || 0;
+
+        // Use short_term_debt_fy_h if available, otherwise use the sum of the two components
+        if (shortTermValue !== 0) {
+          result.push(shortTermValue);
+        } else {
+          result.push(shortTermExclValue + currentPortValue);
+        }
+      }
+      return result;
+    }
+  },
   { key: 'accounts_payable_fy_h', label: 'Trade payables', type: 'currency' },
   { key: 'deferred_income_current_fy_h', label: 'Deferred revenue (current)', type: 'currency' },
-  { key: 'other_current_liabilities_fy_h', label: 'Other current liabilities (incl. taxes/dividends/accruals)', type: 'currency' },
-  { key: 'total_current_liabilities_fy_h', label: 'Subtotal – Current liabilities', type: 'currency', isSubTotal: true },
-  
-  // Total Liabilities
-  { key: 'total_liabilities_fy_h', label: 'TOTAL LIABILITIES', type: 'currency', isTotal: true },
-  
-  // EQUITY SECTION HEADER
-  { label: '--- EQUITY ---', type: 'section', isSection: true },
-  
-  { key: 'common_stock_par_fy_h', label: 'Common stock', type: 'currency' },
-  { key: 'additional_paid_in_capital_fy_h', label: 'Additional paid-in capital', type: 'currency' },
-  { key: 'retained_earnings_fy_h', label: 'Retained earnings', type: 'currency' },
-  { key: 'treasury_stock_common_fy_h', label: 'Treasury stock', type: 'currency' },
-  { key: 'other_common_equity_fy_h', label: 'Other equity', type: 'currency' },
-  { key: 'minority_interest_fy_h', label: 'Minority interest', type: 'currency' },
-  { key: 'total_equity_fy_h', label: 'TOTAL EQUITY', type: 'currency', isTotal: true },
-  
-  // Check
   {
-    label: 'TOTAL LIABILITIES & EQUITY',
+    label: 'Other current liabilities (incl. taxes/dividends/accruals)',
+    type: 'currency',
+    calculation: (dataMap) => {
+      const otherCurrentLiab = dataMap.get('other_current_liabilities_fy_h') || [];
+      const incomeTaxPayable = dataMap.get('income_tax_payable_fy_h') || [];
+      const dividendsPayable = dataMap.get('dividends_payable_fy_h') || [];
+
+      const maxLength = Math.max(otherCurrentLiab.length, incomeTaxPayable.length, dividendsPayable.length);
+      const result = [];
+      for (let i = 0; i < maxLength; i++) {
+        const otherValue = otherCurrentLiab[i] || 0;
+        const taxValue = incomeTaxPayable[i] || 0;
+        const dividendsValue = dividendsPayable[i] || 0;
+        result.push(otherValue + taxValue + dividendsValue);
+      }
+      return result;
+    }
+  },
+  {
+    label: 'Subtotal – Current liabilities',
+    type: 'currency',
+    isSubTotal: true,
+    calculation: (dataMap) => {
+      const totalCurrentLiab = dataMap.get('total_current_liabilities_fy_h') || [];
+
+      // If total_current_liabilities_fy_h is available, use it
+      if (totalCurrentLiab.length > 0 && totalCurrentLiab.some(val => val !== 0)) {
+        return totalCurrentLiab;
+      }
+
+      // Otherwise, calculate from components
+      const shortTermDebt = dataMap.get('short_term_debt_fy_h') || [];
+      const shortTermExclCurrent = dataMap.get('short_term_debt_excl_current_port_fy_h') || [];
+      const currentPortDebt = dataMap.get('current_port_debt_capital_leases_fy_h') || [];
+      const accountsPayable = dataMap.get('accounts_payable_fy_h') || [];
+      const deferredIncome = dataMap.get('deferred_income_current_fy_h') || [];
+      const otherCurrentLiab = dataMap.get('other_current_liabilities_fy_h') || [];
+      const incomeTaxPayable = dataMap.get('income_tax_payable_fy_h') || [];
+      const dividendsPayable = dataMap.get('dividends_payable_fy_h') || [];
+
+      const maxLength = Math.max(
+        shortTermDebt.length, shortTermExclCurrent.length, currentPortDebt.length,
+        accountsPayable.length, deferredIncome.length, otherCurrentLiab.length,
+        incomeTaxPayable.length, dividendsPayable.length
+      );
+
+      const result = [];
+      for (let i = 0; i < maxLength; i++) {
+        const shortTermValue = shortTermDebt[i] || 0;
+        const shortTermExclValue = shortTermExclCurrent[i] || 0;
+        const currentPortValue = currentPortDebt[i] || 0;
+        const payableValue = accountsPayable[i] || 0;
+        const deferredValue = deferredIncome[i] || 0;
+        const otherValue = otherCurrentLiab[i] || 0;
+        const taxValue = incomeTaxPayable[i] || 0;
+        const dividendsValue = dividendsPayable[i] || 0;
+
+        // Calculate short-term debt component
+        const shortTermTotal = shortTermValue !== 0 ? shortTermValue : (shortTermExclValue + currentPortValue);
+
+        result.push(shortTermTotal + payableValue + deferredValue + otherValue + taxValue + dividendsValue);
+      }
+      return result;
+    }
+  },
+
+  // Total Liabilities
+  {
+    label: 'TOTAL LIABILITIES',
     type: 'currency',
     isTotal: true,
     calculation: (dataMap) => {
       const totalLiabilities = dataMap.get('total_liabilities_fy_h') || [];
-      const totalEquity = dataMap.get('total_equity_fy_h') || [];
-      
-      const maxLength = Math.max(totalLiabilities.length, totalEquity.length);
+
+      // If total_liabilities_fy_h is available, use it
+      if (totalLiabilities.length > 0 && totalLiabilities.some(val => val !== 0)) {
+        return totalLiabilities;
+      }
+
+      // Otherwise, calculate from components
+      const totalCurrentLiab = dataMap.get('total_current_liabilities_fy_h') || [];
+      const totalNonCurrentLiab = dataMap.get('total_non_current_liabilities_fy_h') || [];
+
+      const maxLength = Math.max(totalCurrentLiab.length, totalNonCurrentLiab.length);
       const result = [];
       for (let i = 0; i < maxLength; i++) {
-        result.push((totalLiabilities[i] || 0) + (totalEquity[i] || 0));
+        const currentValue = totalCurrentLiab[i] || 0;
+        const nonCurrentValue = totalNonCurrentLiab[i] || 0;
+        result.push(currentValue + nonCurrentValue);
       }
       return result;
     }
-  }
+  },
+  
+  // EQUITY SECTION HEADER
+  { label: '--- EQUITY ---', type: 'section', isSection: true },
+
+  {
+    label: 'Equity share capital',
+    type: 'currency',
+    calculation: (dataMap) => {
+      const commonStock = dataMap.get('common_stock_par_fy_h') || [];
+      const preferredStock = dataMap.get('preferred_stock_carrying_value_fy_h') || [];
+
+      const maxLength = Math.max(commonStock.length, preferredStock.length);
+      const result = [];
+      for (let i = 0; i < maxLength; i++) {
+        const commonValue = commonStock[i] || 0;
+        const preferredValue = preferredStock[i] || 0;
+        // Use preferred stock only if non-zero, otherwise use common stock
+        result.push(preferredValue !== 0 ? preferredValue : commonValue);
+      }
+      return result;
+    }
+  },
+  {
+    label: 'Reserves & surplus (incl. APIC, retained earnings, other equity, net of treasury)',
+    type: 'currency',
+    calculation: (dataMap) => {
+      const paidInCapital = dataMap.get('paid_in_capital_fy_h') || [];
+      const additionalPaidIn = dataMap.get('additional_paid_in_capital_fy_h') || [];
+      const retainedEarnings = dataMap.get('retained_earnings_fy_h') || [];
+      const otherCommonEquity = dataMap.get('other_common_equity_fy_h') || [];
+      const treasuryStock = dataMap.get('treasury_stock_common_fy_h') || [];
+
+      const maxLength = Math.max(
+        paidInCapital.length, additionalPaidIn.length, retainedEarnings.length,
+        otherCommonEquity.length, treasuryStock.length
+      );
+
+      const result = [];
+      for (let i = 0; i < maxLength; i++) {
+        const paidInValue = paidInCapital[i] || 0;
+        const additionalValue = additionalPaidIn[i] || 0;
+        const retainedValue = retainedEarnings[i] || 0;
+        const otherValue = otherCommonEquity[i] || 0;
+        const treasuryValue = treasuryStock[i] || 0;
+
+        result.push(paidInValue + additionalValue + retainedValue + otherValue - Math.abs(treasuryValue));
+      }
+      return result;
+    }
+  },
+  { key: 'shrhldrs_equity_fy_h', label: 'Equity attributable to owners', type: 'currency' },
+  {
+    label: 'TOTAL EQUITY',
+    type: 'currency',
+    isTotal: true,
+    calculation: (dataMap) => {
+      const shareholdersEquity = dataMap.get('shrhldrs_equity_fy_h') || [];
+      const minorityInterest = dataMap.get('minority_interest_fy_h') || [];
+
+      const maxLength = Math.max(shareholdersEquity.length, minorityInterest.length);
+      const result = [];
+      for (let i = 0; i < maxLength; i++) {
+        const shareholdersValue = shareholdersEquity[i] || 0;
+        const minorityValue = minorityInterest[i] || 0;
+        result.push(shareholdersValue + minorityValue);
+      }
+      return result;
+    }
+  },
+  
+  // Check
+  { key: 'total_liabilities_shrhldrs_equity_fy_h', label: 'TOTAL LIABILITIES & EQUITY', type: 'currency', isTotal: true }
 ];
 
 // Banking-specific metrics (simplified version for banking companies)

@@ -9,12 +9,9 @@ import {
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
-  Tooltip,
-  Legend
+  Tooltip
 } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { ChevronDown, Bell } from "lucide-react";
@@ -41,6 +38,19 @@ interface PEData {
   price: number;
   eps: number;
   median_pe?: number;
+  ttm_eps_bar?: number | null;
+}
+
+interface MarketCapSalesData {
+  date: string;
+  market_cap_sales_ratio: number;
+  quarterly_sales: number;
+  timestamp: number;
+  time: number;
+  market_cap: number;
+  sales: number;
+  median_market_cap_sales?: number;
+  quarterly_sales_bar?: number | null;
 }
 
 interface StockChartProps {
@@ -49,7 +59,7 @@ interface StockChartProps {
 }
 
 type TimeFrame = "1M" | "6M" | "1Yr" | "3Yr" | "5Yr" | "10Yr" | "Max";
-type ChartType = "price" | "pe_ratio";
+type ChartType = "price" | "pe_ratio" | "market_cap_sales";
 
 const TIME_FRAMES: { label: string; value: TimeFrame; apiValue: string }[] = [
   { label: "1M", value: "1M", apiValue: "1M" },
@@ -84,10 +94,6 @@ const calculateDMA = (data: ChartData[], period: number): number[] => {
   return result;
 };
 
-// Format currency - always show exact price
-const formatCurrency = (value: number): string => {
-  return `₹${value.toFixed(2)}`;
-};
 
 // Format volume
 const formatVolume = (value: number): string => {
@@ -100,18 +106,56 @@ const formatVolume = (value: number): string => {
 };
 
 // Custom tooltip
-const CustomTooltip = ({ active, payload, label, chartType }: any) => {
+const CustomTooltip = ({ active, payload, chartType }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
+
+    // Format date consistently across all charts as "01 Aug 25"
+    const formatDate = (timestamp: number) => {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "2-digit"
+      });
+    };
 
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 sm:p-3 text-xs sm:text-sm max-w-xs">
         <p className="font-medium text-gray-900 mb-1 sm:mb-2 text-xs sm:text-sm">
-          {new Date(data.timestamp).toLocaleDateString()}
+          {formatDate(data.timestamp)}
         </p>
+        {/* For PE ratio chart, always show TTM EPS even if no bar on this day */}
+        {chartType === "pe_ratio" && data.ttm_eps && (
+          <div className="flex items-center justify-between gap-1 sm:gap-2 mb-1">
+            <div className="flex items-center gap-1">
+              <div
+                className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
+                style={{ backgroundColor: "#87ceeb" }}
+              />
+              <span className="text-gray-600 text-xs truncate">
+                TTM EPS
+              </span>
+            </div>
+            <span className="font-mono font-medium text-xs sm:text-sm">
+              ₹{data.ttm_eps.toFixed(2)}
+            </span>
+          </div>
+        )}
         {payload.map((entry: any, index: number) => {
           let displayName = entry.dataKey;
           let formattedValue = entry.value;
+
+          // Skip TTM EPS/Sales entries since we handle them separately above
+          if (entry.dataKey === "ttm_eps" || entry.dataKey === "ttm_eps_bar" ||
+              entry.dataKey === "quarterly_sales" || entry.dataKey === "quarterly_sales_bar") {
+            return null;
+          }
+
+          // For market_cap_sales chart, only show the ratio
+          if (chartType === "market_cap_sales" && entry.dataKey !== "market_cap_sales_ratio") {
+            return null;
+          }
 
           // Format based on data type
           if (entry.dataKey === "price") {
@@ -123,9 +167,9 @@ const CustomTooltip = ({ active, payload, label, chartType }: any) => {
           } else if (entry.dataKey === "pe_ratio") {
             displayName = "PE Ratio";
             formattedValue = entry.value?.toFixed(2);
-          } else if (entry.dataKey === "ttm_eps") {
-            displayName = "TTM EPS";
-            formattedValue = `₹${entry.value?.toFixed(2)}`;
+          } else if (entry.dataKey === "market_cap_sales_ratio") {
+            displayName = "Market Cap to Sales";
+            formattedValue = entry.value?.toFixed(1);
           } else if (typeof entry.dataKey === 'string' && entry.dataKey.includes("dma")) {
             displayName = entry.dataKey.toUpperCase();
             formattedValue = `₹${entry.value?.toFixed(2)}`;
@@ -160,7 +204,9 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
   const [chartType, setChartType] = useState<ChartType>("price");
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [peData, setPEData] = useState<PEData[]>([]);
+  const [marketCapSalesData, setMarketCapSalesData] = useState<MarketCapSalesData[]>([]);
   const [medianPE, setMedianPE] = useState<number>(25.7);
+  const [medianMarketCapSales, setMedianMarketCapSales] = useState<number>(4.3);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [indicators, setIndicators] = useState(CHART_INDICATORS);
@@ -197,13 +243,23 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
         const timestamp = item.timestamp;
         const date = new Date(timestamp);
 
-        // Format date based on timeframe
+        // Format date based on timeframe - more helpful labels
         let dateFormat;
-        if (["1M", "3M"].includes(selectedTimeFrame)) {
+        if (selectedTimeFrame === "1M") {
           dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        } else if (["6M", "1Yr"].includes(selectedTimeFrame)) {
-          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+        } else if (selectedTimeFrame === "6M") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        } else if (selectedTimeFrame === "1Yr") {
+          // Show month and year for 1Y - more helpful than just month-year
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "3Yr") {
+          // Show month and year for 3Y view - more helpful than quarters
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "5Yr") {
+          // Show years for 5Y view - but full year for clarity
+          dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
         } else {
+          // 10Yr, Max - show full years
           dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
         }
 
@@ -258,18 +314,28 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
         throw new Error("Invalid PE data format");
       }
 
-      // Transform and enhance PE data
+      // Transform and enhance PE data - keep ALL daily data points
       const transformedPEData: PEData[] = result.data.map((item: any) => {
         const timestamp = item.timestamp || item.time * 1000; // Handle both formats
         const date = new Date(timestamp);
 
-        // Format date based on timeframe
+        // Format date based on timeframe - more helpful labels
         let dateFormat;
-        if (["1M", "3M"].includes(selectedTimeFrame)) {
+        if (selectedTimeFrame === "1M") {
           dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        } else if (["6M", "1Yr"].includes(selectedTimeFrame)) {
-          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+        } else if (selectedTimeFrame === "6M") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        } else if (selectedTimeFrame === "1Yr") {
+          // Show month and year for 1Y - more helpful than just month-year
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "3Yr") {
+          // Show month and year for 3Y view - more helpful than quarters
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "5Yr") {
+          // Show years for 5Y view - but full year for clarity
+          dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
         } else {
+          // 10Yr, Max - show full years
           dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
         }
 
@@ -285,11 +351,162 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
         };
       });
 
-      setPEData(transformedPEData);
-      setMedianPE(result.median_pe || 25.7);
+      // Create quarterly TTM EPS bars data - separate from daily PE data
+      const quarterlyTTMData = new Map<string, PEData>();
+
+      transformedPEData.forEach((item) => {
+        const date = new Date(item.timestamp);
+        const year = date.getFullYear();
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${year}-Q${quarter}`;
+
+        // Keep the latest data point for each quarter (TTM EPS should be same within quarter)
+        if (!quarterlyTTMData.has(quarterKey) || date > new Date(quarterlyTTMData.get(quarterKey)!.timestamp)) {
+          quarterlyTTMData.set(quarterKey, item);
+        }
+      });
+
+      // Calculate dynamic median PE from all data
+      const allPEValues = transformedPEData.map(d => d.pe_ratio).filter(pe => pe > 0);
+      const sortedPE = allPEValues.sort((a, b) => a - b);
+      const dynamicMedianPE = sortedPE.length > 0
+        ? sortedPE.length % 2 === 0
+          ? (sortedPE[sortedPE.length / 2 - 1] + sortedPE[sortedPE.length / 2]) / 2
+          : sortedPE[Math.floor(sortedPE.length / 2)]
+        : 25.7; // fallback
+
+      // Create enhanced data with quarterly TTM bars
+      const enhancedPEData = transformedPEData.map((item) => {
+        const date = new Date(item.timestamp);
+        const year = date.getFullYear();
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${year}-Q${quarter}`;
+
+        // Get the TTM EPS for this quarter (same value for all days in quarter)
+        const quarterData = quarterlyTTMData.get(quarterKey);
+        const quarterTTMEPS = quarterData ? quarterData.ttm_eps : item.ttm_eps;
+
+        // Only show TTM EPS bar for the first day of each quarter
+        const isQuarterStart = quarterData && Math.abs(item.timestamp - quarterData.timestamp) < 7 * 24 * 60 * 60 * 1000; // Within 7 days
+
+        return {
+          ...item,
+          // Show TTM EPS bar only for quarter representative points
+          ttm_eps_bar: isQuarterStart ? quarterTTMEPS : null,
+          // But keep TTM EPS for all days (for tooltip)
+          ttm_eps: quarterTTMEPS,
+          // Add dynamic median PE
+          median_pe: dynamicMedianPE
+        };
+      });
+
+      setPEData(enhancedPEData as any);
+      setMedianPE(dynamicMedianPE);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch PE data");
       console.error("PE data fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch Market Cap/Sales data
+  const fetchMarketCapSalesData = async (timeframe: TimeFrame) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const apiTimeframe = TIME_FRAMES.find(tf => tf.value === timeframe)?.apiValue || "1Y";
+      const response = await fetch(`/api/charts/market-cap-sales/${symbol}?timeframe=${apiTimeframe}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Market Cap/Sales data: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.data || !Array.isArray(result.data)) {
+        throw new Error("Invalid Market Cap/Sales data format");
+      }
+
+      // Transform and enhance Market Cap/Sales data - keep ALL daily data points
+      const transformedMarketCapSalesData: MarketCapSalesData[] = result.data.map((item: any) => {
+        const timestamp = item.time ? item.time * 1000 : item.timestamp; // Convert time to milliseconds if needed
+        const date = new Date(timestamp);
+
+        // Format date based on timeframe - more helpful labels
+        let dateFormat;
+        if (selectedTimeFrame === "1M") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        } else if (selectedTimeFrame === "6M") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        } else if (selectedTimeFrame === "1Yr") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "3Yr") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "5Yr") {
+          dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
+        } else {
+          dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
+        }
+
+        return {
+          date: dateFormat,
+          market_cap_sales_ratio: parseFloat((item.market_cap_sales_ratio || 0).toFixed(3)),
+          quarterly_sales: parseFloat((item.sales_ttm || 0).toFixed(0)), // Use sales_ttm from new API
+          timestamp: timestamp,
+          time: item.time || Math.floor(timestamp / 1000),
+          market_cap: parseFloat(((item.market_cap || 0) / 1000000000).toFixed(2)), // Convert to billions
+          sales: parseFloat((item.sales_ttm || 0).toFixed(0)),
+          median_market_cap_sales: result.metadata?.median_market_cap_sales || 4.3
+        };
+      });
+
+      // Create quarterly Sales bars data - separate from daily Market Cap/Sales data
+      const quarterlySalesData = new Map<string, MarketCapSalesData>();
+
+      transformedMarketCapSalesData.forEach((item) => {
+        const date = new Date(item.timestamp);
+        const year = date.getFullYear();
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${year}-Q${quarter}`;
+
+        // Keep the latest data point for each quarter (TTM Sales should be same within quarter)
+        if (!quarterlySalesData.has(quarterKey) || date > new Date(quarterlySalesData.get(quarterKey)!.timestamp)) {
+          quarterlySalesData.set(quarterKey, item);
+        }
+      });
+
+      // Create enhanced data with quarterly Sales bars
+      const enhancedMarketCapSalesData = transformedMarketCapSalesData.map((item) => {
+        const date = new Date(item.timestamp);
+        const year = date.getFullYear();
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${year}-Q${quarter}`;
+
+        // Get the quarterly sales for this quarter (same value for all days in quarter)
+        const quarterData = quarterlySalesData.get(quarterKey);
+        const quarterSales = quarterData ? quarterData.quarterly_sales : item.quarterly_sales;
+
+        // Only show Sales bar for the first day of each quarter
+        const isQuarterStart = quarterData && Math.abs(item.timestamp - quarterData.timestamp) < 7 * 24 * 60 * 60 * 1000;
+
+        return {
+          ...item,
+          // Show Sales bar only for quarter representative points
+          quarterly_sales_bar: isQuarterStart ? quarterSales : null,
+          // But keep quarterly sales for all days (for tooltip)
+          quarterly_sales: quarterSales,
+          // Add median Market Cap/Sales
+          median_market_cap_sales: result.metadata?.median_market_cap_sales || 4.3
+        };
+      });
+
+      setMarketCapSalesData(enhancedMarketCapSalesData as any);
+      setMedianMarketCapSales(result.metadata?.median_market_cap_sales || 4.3);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch Market Cap/Sales data");
+      console.error("Market Cap/Sales data fetch error:", err);
     } finally {
       setLoading(false);
     }
@@ -301,6 +518,8 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
       fetchChartData(selectedTimeFrame);
     } else if (chartType === "pe_ratio") {
       fetchPEData(selectedTimeFrame);
+    } else if (chartType === "market_cap_sales") {
+      fetchMarketCapSalesData(selectedTimeFrame);
     }
   }, [symbol, selectedTimeFrame, chartType]);
 
@@ -315,8 +534,8 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
     );
   };
 
-  // Calculate price range for secondary Y-axis positioning
-  const priceRange = useMemo(() => {
+  // Calculate price/PE/MarketCapSales range for right Y-axis positioning
+  const rightAxisRange = useMemo(() => {
     if (chartType === "price") {
       if (chartData.length === 0) return { min: 0, max: 1000 };
 
@@ -325,7 +544,7 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
       const max = Math.max(...prices);
 
       return { min: min * 0.95, max: max * 1.05 };
-    } else {
+    } else if (chartType === "pe_ratio") {
       if (peData.length === 0) return { min: 0, max: 50 };
 
       const peValues = peData.map(d => d.pe_ratio);
@@ -333,8 +552,69 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
       const max = Math.max(...peValues);
 
       return { min: min * 0.9, max: max * 1.1 };
+    } else if (chartType === "market_cap_sales") {
+      if (marketCapSalesData.length === 0) return { min: 0, max: 10 };
+
+      const ratioValues = marketCapSalesData.map(d => d.market_cap_sales_ratio);
+      const min = Math.min(...ratioValues);
+      const max = Math.max(...ratioValues);
+
+      return { min: min * 0.9, max: max * 1.1 };
     }
-  }, [chartData, peData, chartType]);
+    return { min: 0, max: 50 };
+  }, [chartData, peData, marketCapSalesData, chartType]);
+
+  // Calculate TTM EPS/Sales range for left Y-axis positioning
+  const leftAxisRange = useMemo(() => {
+    if (chartType === "pe_ratio" && peData.length > 0) {
+      // Get only the TTM EPS values that have bars (quarterly data)
+      const ttmEpsValues = peData
+        .filter(d => d.ttm_eps_bar !== null && d.ttm_eps_bar !== undefined)
+        .map(d => d.ttm_eps_bar as number);
+
+      if (ttmEpsValues.length === 0) {
+        // Fallback to all TTM EPS values if no bar data
+        const allTtmValues = peData.map(d => d.ttm_eps);
+        const min = Math.min(...allTtmValues);
+        const max = Math.max(...allTtmValues);
+        return { min: min * 0.9, max: max * 1.1 };
+      }
+
+      const min = Math.min(...ttmEpsValues);
+      const max = Math.max(...ttmEpsValues);
+
+      // Add padding to make the bars more visible
+      const padding = (max - min) * 0.2; // 20% padding
+      return {
+        min: Math.max(0, min - padding), // Don't go below 0
+        max: max + padding
+      };
+    } else if (chartType === "market_cap_sales" && marketCapSalesData.length > 0) {
+      // Get only the TTM Sales values that have bars (quarterly data)
+      const ttmSalesValues = marketCapSalesData
+        .filter(d => d.quarterly_sales_bar !== null && d.quarterly_sales_bar !== undefined)
+        .map(d => d.quarterly_sales_bar as number);
+
+      if (ttmSalesValues.length === 0) {
+        // Fallback to all TTM Sales values if no bar data
+        const allTtmValues = marketCapSalesData.map(d => d.quarterly_sales);
+        const min = Math.min(...allTtmValues);
+        const max = Math.max(...allTtmValues);
+        return { min: min * 0.9, max: max * 1.1 };
+      }
+
+      const min = Math.min(...ttmSalesValues);
+      const max = Math.max(...ttmSalesValues);
+
+      // Add padding to make the bars more visible
+      const padding = (max - min) * 0.2; // 20% padding
+      return {
+        min: Math.max(0, min - padding), // Don't go below 0
+        max: max + padding
+      };
+    }
+    return { min: 0, max: 100 }; // Default range
+  }, [peData, marketCapSalesData, chartType]);
 
   // Responsive chart margins
   const chartMargins = useMemo(() => {
@@ -347,25 +627,6 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
     }
   }, [windowWidth]);
 
-  // Chart configuration
-  const chartConfig = {
-    price: {
-      label: "Price on NSE",
-      color: "#6366f1",
-    },
-    volume: {
-      label: "Volume",
-      color: "#a855f7",
-    },
-    dma50: {
-      label: "50 DMA",
-      color: "#10b981",
-    },
-    dma200: {
-      label: "200 DMA",
-      color: "#f59e0b",
-    },
-  };
 
   if (loading) {
     return (
@@ -385,7 +646,15 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
           <p className="text-sm sm:text-base text-red-600 mb-2">Error loading chart</p>
           <p className="text-xs sm:text-sm text-gray-500 mb-3">{error}</p>
           <Button
-            onClick={() => chartType === "price" ? fetchChartData(selectedTimeFrame) : fetchPEData(selectedTimeFrame)}
+            onClick={() => {
+              if (chartType === "price") {
+                fetchChartData(selectedTimeFrame);
+              } else if (chartType === "pe_ratio") {
+                fetchPEData(selectedTimeFrame);
+              } else if (chartType === "market_cap_sales") {
+                fetchMarketCapSalesData(selectedTimeFrame);
+              }
+            }}
             variant="outline"
             size="sm"
             className="text-xs sm:text-sm"
@@ -425,12 +694,13 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 sm:px-3">
-                {chartType === "price" ? "Price" : "PE Ratio"} <ChevronDown className="ml-1 h-3 w-3" />
+                {chartType === "price" ? "Price" : chartType === "pe_ratio" ? "PE Ratio" : "Market Cap / Sales"} <ChevronDown className="ml-1 h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setChartType("price")}>Price</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setChartType("pe_ratio")}>PE Ratio</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setChartType("market_cap_sales")}>Market Cap / Sales</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -475,25 +745,45 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
 
       {/* Chart */}
       <div className="p-2 sm:p-4">
-        <ChartContainer config={chartConfig} className="h-64 sm:h-80 md:h-96 lg:h-[28rem] w-full">
-          {chartType === "price" ? (
-            <ComposedChart
-              data={chartData}
-              margin={chartMargins}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
+        <div className="h-64 sm:h-80 md:h-96 lg:h-[28rem] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            {chartType === "price" ? (
+              <ComposedChart
+                data={chartData}
+                margin={chartMargins}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis
                 dataKey="date"
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
-                interval={windowWidth < 640 ? 'preserveStartEnd' : 'preserveStart'}
+                interval={(() => {
+                  // Dynamic interval based on timeframe and screen size
+                  if (windowWidth < 640) {
+                    return 'preserveStartEnd';
+                  } else if (windowWidth < 1024) {
+                    if (selectedTimeFrame === "1M") return 2;
+                    if (selectedTimeFrame === "6M") return 10;
+                    if (selectedTimeFrame === "1Yr") return 20;
+                    if (selectedTimeFrame === "3Yr") return 60; // Show every ~2 months
+                    if (selectedTimeFrame === "5Yr") return 120; // Show every ~6 months
+                    return 200; // 10Yr, Max - very sparse
+                  } else {
+                    if (selectedTimeFrame === "1M") return 1;
+                    if (selectedTimeFrame === "6M") return 5;
+                    if (selectedTimeFrame === "1Yr") return 15;
+                    if (selectedTimeFrame === "3Yr") return 30; // Show every month
+                    if (selectedTimeFrame === "5Yr") return 60; // Show every ~3 months
+                    return 120; // 10Yr, Max - show every ~6 months
+                  }
+                })()}
                 padding={{ left: 0, right: 0 }}
               />
               <YAxis
                 yAxisId="price"
                 orientation="right"
-                domain={[priceRange.min, priceRange.max]}
+                domain={[rightAxisRange.min, rightAxisRange.max]}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
@@ -564,7 +854,7 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 />
               )}
             </ComposedChart>
-          ) : (
+          ) : chartType === "pe_ratio" ? (
             <ComposedChart
               data={peData}
               margin={chartMargins}
@@ -575,13 +865,32 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
-                interval={windowWidth < 640 ? 'preserveStartEnd' : 'preserveStart'}
+                interval={(() => {
+                  // Dynamic interval based on timeframe and screen size
+                  if (windowWidth < 640) {
+                    return 'preserveStartEnd';
+                  } else if (windowWidth < 1024) {
+                    if (selectedTimeFrame === "1M") return 2;
+                    if (selectedTimeFrame === "6M") return 10;
+                    if (selectedTimeFrame === "1Yr") return 20;
+                    if (selectedTimeFrame === "3Yr") return 60; // Show every ~2 months
+                    if (selectedTimeFrame === "5Yr") return 120; // Show every ~6 months
+                    return 200; // 10Yr, Max - very sparse
+                  } else {
+                    if (selectedTimeFrame === "1M") return 1;
+                    if (selectedTimeFrame === "6M") return 5;
+                    if (selectedTimeFrame === "1Yr") return 15;
+                    if (selectedTimeFrame === "3Yr") return 30; // Show every month
+                    if (selectedTimeFrame === "5Yr") return 60; // Show every ~3 months
+                    return 120; // 10Yr, Max - show every ~6 months
+                  }
+                })()}
                 padding={{ left: 0, right: 0 }}
               />
               <YAxis
                 yAxisId="pe"
                 orientation="right"
-                domain={[priceRange.min, priceRange.max]}
+                domain={[rightAxisRange.min, rightAxisRange.max]}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
@@ -591,19 +900,30 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
               <YAxis
                 yAxisId="eps"
                 orientation="left"
+                domain={[leftAxisRange.min, leftAxisRange.max]}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
-                tickFormatter={(value) => `₹${value.toFixed(0)}`}
-                width={windowWidth < 640 ? 25 : windowWidth < 1024 ? 35 : 45}
+                tickFormatter={(value) => `₹${value.toFixed(1)}`}
+                width={windowWidth < 640 ? 30 : windowWidth < 1024 ? 40 : 50}
+                label={{
+                  value: 'TTM EPS',
+                  angle: -90,
+                  position: 'insideLeft',
+                  style: {
+                    textAnchor: 'middle',
+                    fontSize: windowWidth < 640 ? 10 : 12,
+                    fill: '#666'
+                  }
+                }}
               />
 
               <Tooltip content={<CustomTooltip chartType={chartType} />} />
 
-              {/* TTM EPS bars - render first (background) */}
+              {/* TTM EPS bars - render first (background) - only quarterly */}
               <Bar
                 yAxisId="eps"
-                dataKey="ttm_eps"
+                dataKey="ttm_eps_bar"
                 fill="#87ceeb"
                 opacity={0.6}
                 name="TTM EPS"
@@ -635,8 +955,112 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 />
               )}
             </ComposedChart>
-          )}
-        </ChartContainer>
+          ) : chartType === "market_cap_sales" ? (
+            <ComposedChart
+              data={marketCapSalesData}
+              margin={chartMargins}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="date"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
+                interval={(() => {
+                  // Dynamic interval based on timeframe and screen size
+                  if (windowWidth < 640) {
+                    return 'preserveStartEnd';
+                  } else if (windowWidth < 1024) {
+                    if (selectedTimeFrame === "1M") return 2;
+                    if (selectedTimeFrame === "6M") return 10;
+                    if (selectedTimeFrame === "1Yr") return 20;
+                    if (selectedTimeFrame === "3Yr") return 60; // Show every ~2 months
+                    if (selectedTimeFrame === "5Yr") return 120; // Show every ~6 months
+                    return 200; // 10Yr, Max - very sparse
+                  } else {
+                    if (selectedTimeFrame === "1M") return 1;
+                    if (selectedTimeFrame === "6M") return 5;
+                    if (selectedTimeFrame === "1Yr") return 15;
+                    if (selectedTimeFrame === "3Yr") return 30; // Show every month
+                    if (selectedTimeFrame === "5Yr") return 60; // Show every ~3 months
+                    return 120; // 10Yr, Max - show every ~6 months
+                  }
+                })()}
+                padding={{ left: 0, right: 0 }}
+              />
+              <YAxis
+                yAxisId="market_cap_sales"
+                orientation="right"
+                domain={[rightAxisRange.min, rightAxisRange.max]}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
+                tickFormatter={(value) => value.toFixed(2)}
+                width={windowWidth < 640 ? 25 : windowWidth < 1024 ? 40 : 50}
+              />
+              <YAxis
+                yAxisId="sales"
+                orientation="left"
+                domain={[leftAxisRange.min, leftAxisRange.max]}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
+                tickFormatter={(value) => `₹${(value / 10000000).toFixed(0)}Cr`}
+                width={windowWidth < 640 ? 35 : windowWidth < 1024 ? 45 : 55}
+                label={{
+                  value: 'TTM Sales',
+                  angle: -90,
+                  position: 'insideLeft',
+                  style: {
+                    textAnchor: 'middle',
+                    fontSize: windowWidth < 640 ? 10 : 12,
+                    fill: '#666'
+                  }
+                }}
+              />
+
+              <Tooltip content={<CustomTooltip chartType={chartType} />} />
+
+              {/* TTM Sales bars - render first (background) - only quarterly */}
+              <Bar
+                yAxisId="sales"
+                dataKey="quarterly_sales_bar"
+                fill="#87ceeb"
+                opacity={0.6}
+                name="TTM Sales"
+              />
+
+              {/* Market Cap/Sales ratio line - render on top */}
+              <Line
+                yAxisId="market_cap_sales"
+                type="monotone"
+                dataKey="market_cap_sales_ratio"
+                stroke="#6366f1"
+                strokeWidth={2}
+                dot={false}
+                name="Market Cap/Sales"
+                connectNulls={false}
+              />
+
+              {/* Median Market Cap/Sales line - rendered as reference line */}
+              {marketCapSalesData.length > 0 && (
+                <Line
+                  yAxisId="market_cap_sales"
+                  type="monotone"
+                  dataKey="median_market_cap_sales"
+                  stroke="#9ca3af"
+                  strokeWidth={1}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  name={`Median Market Cap/Sales = ${medianMarketCapSales.toFixed(2)}`}
+                />
+              )}
+            </ComposedChart>
+          ) : (
+              <div>No chart available</div>
+            )}
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Legend/Controls */}
@@ -663,7 +1087,7 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 </label>
               </div>
             ))
-          ) : (
+          ) : chartType === "pe_ratio" ? (
             <>
               <div className="flex items-center space-x-1 sm:space-x-2">
                 <Checkbox id="pe" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -687,7 +1111,31 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 </label>
               </div>
             </>
-          )}
+          ) : chartType === "market_cap_sales" ? (
+            <>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <Checkbox id="market_cap_sales" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
+                <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
+                  <div className="w-2 sm:w-3 h-0.5 rounded" style={{ backgroundColor: "#6366f1" }} />
+                  <span className="whitespace-nowrap">Market Cap/Sales</span>
+                </label>
+              </div>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <Checkbox id="median_market_cap_sales" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
+                <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
+                  <div className="w-2 sm:w-3 h-0.5 rounded border-dashed" style={{ borderColor: "#9ca3af" }} />
+                  <span className="whitespace-nowrap">Median Market Cap/Sales = {medianMarketCapSales.toFixed(2)}</span>
+                </label>
+              </div>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <Checkbox id="ttm_sales" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
+                <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
+                  <div className="w-2 sm:w-3 h-0.5 rounded" style={{ backgroundColor: "#87ceeb" }} />
+                  <span className="whitespace-nowrap">TTM Sales</span>
+                </label>
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
     </div>

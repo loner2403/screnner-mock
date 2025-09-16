@@ -7,7 +7,7 @@ import {
 import { useCashFlowData } from './hooks';
 
 // Loading skeleton component
-const LoadingSkeleton: React.FC<CashFlowLoadingState> = ({ years = 12, metrics = 19 }) => (
+const LoadingSkeleton: React.FC<CashFlowLoadingState> = ({ years = 12, metrics = 5 }) => (
   <div className="w-full">
     <div className="overflow-x-auto border border-gray-200 rounded-lg bg-white shadow-sm">
       <table className="w-full table-auto min-w-full">

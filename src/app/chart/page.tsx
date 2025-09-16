@@ -10,7 +10,7 @@ export default function ChartPage() {
         </div>
         
         <div className="w-full">
-          <StockChart symbol="RELIANCE" className="w-full shadow-lg" />
+          <StockChart symbol="HDFCBANK" className="w-full shadow-lg" />
         </div>
       </div>
     </div>

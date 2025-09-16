@@ -62,14 +62,17 @@ export const BANKING_PROFIT_LOSS_METRICS: MetricConfig[] = [
 
 // Non-banking metric configuration for Profit & Loss
 export const NON_BANKING_PROFIT_LOSS_METRICS: MetricConfig[] = [
-  { key: 'revenue_fy_h', label: 'Sales', type: 'currency' },
-  { key: 'cost_of_goods_fy_h', label: 'Expenses', type: 'currency' },
-  { key: 'gross_profit_fy_h', label: 'Operating Profit', type: 'currency' },
-  { key: 'gross_margin_fy_h', label: 'OPM %', type: 'percentage' },
-  { key: 'other_income_fy_h', label: 'Other Income', type: 'currency' },
-  { key: 'interest_expense_fy_h', label: 'Interest', type: 'currency' },
+  { key: 'total_revenue_fy_h', label: 'Sales', type: 'currency' },
+  { key: 'cost_of_goods_fy_h', label: 'COGS', type: 'currency' },
+  { key: 'gross_profit_fy_h', label: 'Gross Profit', type: 'currency' },
+  { key: 'operating_expenses_fy_h', label: 'Operating Expense', type: 'currency' },
+  { key: 'ebitda_fy_h', label: 'EBITDA', type: 'currency' },
+  { key: 'ebitda_margin_fy_h', label: 'EBITDA %', type: 'percentage' },
   { key: 'depreciation_fy_h', label: 'Depreciation', type: 'currency' },
-  { key: 'pretax_income_fy_h', label: 'Profit Before Tax', type: 'currency' },
+  { key: 'ebit_fy_h', label: 'EBIT', type: 'currency' },
+  { key: 'non_oper_interest_exp_fy_h', label: 'Interest', type: 'currency' },
+  { key: 'other_income_fy_h', label: 'Other Income', type: 'currency' },
+  { key: 'pretax_income_fy_h', label: 'Profit before tax', type: 'currency' },
   {
     label: 'Tax %',
     type: 'percentage',
@@ -94,14 +97,14 @@ export const NON_BANKING_PROFIT_LOSS_METRICS: MetricConfig[] = [
   
   
   
-  { key: 'net_income_fy_h', label: 'Net Profit', type: 'currency' },
+  { key: 'net_income_fy_h', label: 'Net Income', type: 'currency' },
   { 
     key: 'earnings_per_share_basic_fy_h', 
     label: 'EPS (Basic)', 
     type: 'number',
     formatValue: (value) => typeof value === 'number' ? Number(value.toFixed(2)) : value
   },
-  { key: 'dividend_payout_ratio_fy_h', label: 'Dividend Payout %', type: 'percentage' },
+  
 ];
 
 // Get metric configuration based on company type

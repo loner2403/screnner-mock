@@ -2,9 +2,15 @@
 export interface MetricRow {
   label: string;
   values: string[];
-  type: 'currency' | 'percentage' | 'number';
+  type: 'currency' | 'percentage' | 'number' | 'section';
   unit?: string;
   rawValues?: (number | null)[];
+  level?: number;
+  isSection?: boolean;
+  isSubTotal?: boolean;
+  isTotal?: boolean;
+  collapsible?: boolean;
+  formula?: string;
 }
 
 export interface BalanceSheetProps {
@@ -23,11 +29,19 @@ export interface ProcessedBalanceSheetData {
 
 // Metric configuration interface (following QuarterlyResults pattern)
 export interface MetricConfig {
-  key: string;
+  key?: string;
   label: string;
-  type: 'currency' | 'percentage' | 'number';
+  type: 'currency' | 'percentage' | 'number' | 'section';
   unit?: string;
-  calculation?: (data: InsightSentryBalanceSheetResponse) => number[] | null;
+  level?: number;
+  isSection?: boolean;
+  isSubTotal?: boolean;
+  isTotal?: boolean;
+  collapsible?: boolean;
+  formula?: string;
+  calculation?: (dataMap: Map<string, (number | null)[]>) => (number | null)[] | null;
+  items?: MetricConfig[];  // Still kept for backwards compatibility but not used in flat structure
+  formatValue?: (value: number) => number;  // For custom formatting
 }
 
 export interface FormattedValue {
@@ -62,10 +76,14 @@ export interface InsightSentryBalanceSheetResponse {
   ppe_total_net_fy_h?: number[];
   long_term_investments_fy_h?: number[];
   long_term_other_assets_total_fy_h?: number[];
+  deferred_tax_assests_fy_h?: number[];
+  goodwill_fy_h?: number[];
+  intangibles_net_fy_h?: number[];
+  investments_in_unconcsolidate_fy_h?: number[];
+  other_investments_fy_h?: number[];
   cash_n_equivalents_fy_h?: number[];
   total_inventory_fy_h?: number[];
   cwip_fy_h?: number[];
-  other_liabilities_total_fy_h?: number[];
   
   // Banking-specific annual historical fields
   total_deposits_fy_h?: number[];

@@ -11,11 +11,13 @@ import { getProfitAndLossMetricConfig } from './config';
 
 // Utility functions for Profit & Loss data processing
 
+// Revenue calculation is now done on the client side in the hooks
+
 export function detectCompanyType(
-  sector: string | undefined, 
+  sector: string | undefined,
   companyData: InsightSentryProfitAndLossResponse
 ): CompanyType {
-  const dataMap = new Map<string, any>();
+  const dataMap = new Map<string, unknown>();
   if(Array.isArray(companyData)) {
     for (const item of companyData) {
         dataMap.set(item.id, item.value);
@@ -95,19 +97,26 @@ function formatNumber(value: number | null): string {
 
 export function processProfitAndLossData(
   apiData: InsightSentryProfitAndLossResponse,
-  companyType: CompanyType
+  companyType: CompanyType,
+  calculatedRevenue?: number[]
 ): ProcessedProfitAndLossData {
   const metricConfigs = getProfitAndLossMetricConfig(companyType);
   
-  const dataMap = new Map<string, any>();
+  const dataMap = new Map<string, unknown>();
   if(Array.isArray(apiData)) {
     for (const item of apiData) {
         dataMap.set(item.id, item.value);
     }
   }
 
+  // Use calculated revenue if provided (calculated on client side)
+  if (calculatedRevenue && calculatedRevenue.length > 0) {
+    console.log('Replacing total_revenue_fy_h with calculated revenue from quarterly data');
+    dataMap.set('total_revenue_fy_h', calculatedRevenue);
+  }
+
   // Generate years from 2025 to 2014 (latest to oldest)
-  const currentYear = new Date().getFullYear();
+  // const currentYear = new Date().getFullYear();
   const startYear = 2025;
   const endYear = 2014;
   const years = Array.from({ length: startYear - endYear + 1 }, (_, i) => (startYear - i).toString()); 
@@ -181,7 +190,7 @@ function calculateAverage(values: number[]): number {
 }
 
 // Log and return real API data without overrides
-function debugApiData(dataMap: Map<string, any>) {
+function debugApiData(dataMap: Map<string, unknown>) {
   console.log('=== API Data Debug ===');
   
   // Check what revenue fields are available (based on API response logs)
@@ -227,30 +236,30 @@ function debugApiData(dataMap: Map<string, any>) {
 }
 
 // Extract growth metrics from API data
-export function extractGrowthMetrics(dataMap: Map<string, any>): GrowthMetrics {
+export function extractGrowthMetrics(dataMap: Map<string, unknown>): GrowthMetrics {
   // Debug what's available in the API data
   debugApiData(dataMap);
   
   // Get historical data arrays (latest to oldest) from real API data only
   // Try multiple field name variations based on API response
-  const revenueHistory = dataMap.get('revenue_fy_h') || 
-                        dataMap.get('total_revenue_fy_h') || 
-                        dataMap.get('revenues_fy_h') || 
-                        dataMap.get('total_revenue_ttm_h') || 
-                        dataMap.get('last_annual_revenue') || [];
-  
-  const netIncomeHistory = dataMap.get('net_income_fy_h') || 
-                          dataMap.get('diluted_net_income_fy_h') || 
-                          dataMap.get('net_income_ttm_h') ||
-                          dataMap.get('net_income_fy') ||
-                          dataMap.get('net_income') || [];
-  
-  const roeHistory = dataMap.get('return_on_equity_fy_h') || 
-                    dataMap.get('return_on_equity_fy') || [];
+  const revenueHistory = (dataMap.get('revenue_fy_h') as unknown[]) ||
+                        (dataMap.get('total_revenue_fy_h') as unknown[]) ||
+                        (dataMap.get('revenues_fy_h') as unknown[]) ||
+                        (dataMap.get('total_revenue_ttm_h') as unknown[]) ||
+                        (dataMap.get('last_annual_revenue') as unknown[]) || [];
+
+  const netIncomeHistory = (dataMap.get('net_income_fy_h') as unknown[]) ||
+                          (dataMap.get('diluted_net_income_fy_h') as unknown[]) ||
+                          (dataMap.get('net_income_ttm_h') as unknown[]) ||
+                          (dataMap.get('net_income_fy') as unknown[]) ||
+                          (dataMap.get('net_income') as unknown[]) || [];
+
+  const roeHistory = (dataMap.get('return_on_equity_fy_h') as unknown[]) ||
+                    (dataMap.get('return_on_equity_fy') as unknown[]) || [];
 
   // Helper function to get valid numbers from array
-  const getValidNumbers = (arr: any[]): number[] => 
-    arr.filter(val => typeof val === 'number' && !isNaN(val) && val > 0);
+  const getValidNumbers = (arr: unknown[]): number[] =>
+    arr.filter((val): val is number => typeof val === 'number' && !isNaN(val) && val > 0);
 
   const validRevenue = getValidNumbers(revenueHistory);
   const validNetIncome = getValidNumbers(netIncomeHistory);

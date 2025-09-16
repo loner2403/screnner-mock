@@ -39,6 +39,11 @@ function generateMockBalanceSheetData(symbol: string) {
       long_term_investments_fy_h: generateHistoricalData(45000, 0.08),
       ppe_total_net_fy_h: generateHistoricalData(3500, 0.05),
       loan_loss_allowances_fy_h: generateHistoricalData(5000, 0.10),
+      deferred_tax_assests_fy_h: generateHistoricalData(1800, 0.08),
+      goodwill_fy_h: generateHistoricalData(2200, 0.04),
+      intangibles_net_fy_h: generateHistoricalData(1500, 0.05),
+      investments_in_unconcsolidate_fy_h: generateHistoricalData(6500, 0.07),
+      other_investments_fy_h: generateHistoricalData(3800, 0.09),
       
       // Liabilities
       total_liabilities_fy_h: generateHistoricalData(220000, 0.12),
@@ -61,6 +66,11 @@ function generateMockBalanceSheetData(symbol: string) {
       ppe_total_net_fy_h: generateHistoricalData(25000, 0.08),
       long_term_investments_fy_h: generateHistoricalData(15000, 0.12),
       long_term_other_assets_total_fy_h: generateHistoricalData(10000, 0.09),
+      deferred_tax_assests_fy_h: generateHistoricalData(35000000000, 0.07),
+      goodwill_fy_h: generateHistoricalData(50000000000, 0.05),
+      intangibles_net_fy_h: generateHistoricalData(25000000000, 0.06),
+      investments_in_unconcsolidate_fy_h: generateHistoricalData(80000000000, 0.09),
+      other_investments_fy_h: generateHistoricalData(45000000000, 0.08),
       cwip_fy_h: generateHistoricalData(2000, 0.15),
       
       // Liabilities
@@ -130,20 +140,95 @@ function mapApiToBalanceSheetData(apiData: any, symbol: string, isFromLocalFile:
     report_type: isBank ? 'banking' : 'non-banking'
   };
   
+  // Handle calculated fields for non-current assets as per specification
+  function calculateLongTermInvestmentsTotal(data: Map<string, any>): number[] | null {
+    const longTerm = data.get('long_term_investments_fy_h') || [];
+    const unconsolidated = data.get('investments_in_unconcsolidate_fy_h') || [];
+    const other = data.get('other_investments_fy_h') || [];
+
+    if (Array.isArray(longTerm) && longTerm.length > 0) {
+      return longTerm.map((lt: number | null, i: number) =>
+        (lt || 0) + (unconsolidated[i] || 0) + (other[i] || 0)
+      );
+    }
+    return null;
+  }
+
+  function calculateGoodwillIntangibles(data: Map<string, any>): number[] | null {
+    const goodwill = data.get('goodwill_fy_h') || [];
+    const intangibles = data.get('intangible_assets_fy_h') || [];
+
+    if (Array.isArray(goodwill) && goodwill.length > 0) {
+      return goodwill.map((g: number | null, i: number) =>
+        (g || 0) + (intangibles[i] || 0)
+      );
+    }
+    return null;
+  }
+
+  function calculateNonCurrentAssetsTotal(data: Map<string, any>): number[] | null {
+    const ppe = data.get('ppe_total_net_fy_h') || [];
+    const goodwillIntangibles = calculateGoodwillIntangibles(data) || [];
+    const longTermInv = calculateLongTermInvestmentsTotal(data) || [];
+    const deferredTax = data.get('deferred_tax_assests_fy_h') || [];
+    const otherAssets = data.get('long_term_other_assets_total_fy_h') || [];
+
+    if (Array.isArray(ppe) && ppe.length > 0) {
+      return ppe.map((p: number | null, i: number) =>
+        (p || 0) + (goodwillIntangibles[i] || 0) + (longTermInv[i] || 0) +
+        (deferredTax[i] || 0) + (otherAssets[i] || 0)
+      );
+    }
+    return null;
+  }
+
   // Map balance sheet fields - prefer historical data if available
   const fieldMappings = [
-    // Core balance sheet items that should exist for most companies
+    // Equity fields
     { apiField: 'common_stock_par_fy', histField: 'common_stock_par_fy_h', growth: 0.08 },
+    { apiField: 'additional_paid_in_capital_fy', histField: 'additional_paid_in_capital_fy_h', growth: 0.05 },
     { apiField: 'common_equity_total_fy', histField: 'common_equity_total_fy_h', growth: 0.10 },
     { apiField: 'retained_earnings_fy', histField: 'retained_earnings_fy_h', growth: 0.12 },
-    { apiField: 'total_debt_fy', histField: 'total_debt_fy_h', growth: 0.10 },
-    { apiField: 'total_liabilities_fy', histField: 'total_liabilities_fy_h', growth: 0.11 },
-    { apiField: 'ppe_total_net_fy', histField: 'ppe_total_net_fy_h', growth: 0.07 },
-    { apiField: 'total_assets_fy', histField: 'total_assets_fy_h', growth: 0.09 },
+    { apiField: 'treasury_stock_common_fy', histField: 'treasury_stock_common_fy_h', growth: -0.05 },
+    { apiField: 'other_common_equity_fy', histField: 'other_common_equity_fy_h', growth: 0.03 },
+    { apiField: 'minority_interest_fy', histField: 'minority_interest_fy_h', growth: 0.05 },
     { apiField: 'total_equity_fy', histField: 'total_equity_fy_h', growth: 0.08 },
-    { apiField: 'long_term_investments_fy', histField: 'long_term_investments_fy_h', growth: 0.08 },
+    
+    // Liabilities fields
+    { apiField: 'total_debt_fy', histField: 'total_debt_fy_h', growth: 0.10 },
+    { apiField: 'long_term_debt_fy', histField: 'long_term_debt_fy_h', growth: 0.08 },
+    { apiField: 'short_term_debt_fy', histField: 'short_term_debt_fy_h', growth: 0.10 },
+    { apiField: 'accounts_payable_fy', histField: 'accounts_payable_fy_h', growth: 0.09 },
+    { apiField: 'deferred_income_current_fy', histField: 'deferred_income_current_fy_h', growth: 0.08 },
+    { apiField: 'accrued_expenses_fy', histField: 'accrued_expenses_fy_h', growth: 0.07 },
+    { apiField: 'other_current_liabilities_fy', histField: 'other_current_liabilities_fy_h', growth: 0.08 },
+    { apiField: 'deferred_tax_liabilities_fy', histField: 'deferred_tax_liabilities_fy_h', growth: 0.06 },
+    { apiField: 'total_current_liabilities_fy', histField: 'total_current_liabilities_fy_h', growth: 0.12 },
+    { apiField: 'total_noncurrent_liabilities_fy', histField: 'total_non_current_liabilities_fy_h', growth: 0.07 },
+    { apiField: 'total_liabilities_fy', histField: 'total_liabilities_fy_h', growth: 0.11 },
     { apiField: 'other_liabilities_total_fy', histField: 'other_liabilities_total_fy_h', growth: 0.10 },
-    { apiField: 'total_current_liabilities_fy', histField: 'total_current_liabilities_fy_h', growth: 0.12 }
+
+    // Non-current assets fields
+    { apiField: 'ppe_total_net_fy', histField: 'ppe_total_net_fy_h', growth: 0.07 },
+    { apiField: 'goodwill_fy', histField: 'goodwill_fy_h', growth: 0.05 },
+    { apiField: 'intangibles_net_fy', histField: 'intangibles_net_fy_h', growth: 0.05 },
+    { apiField: 'long_term_investments_fy', histField: 'long_term_investments_fy_h', growth: 0.08 },
+    { apiField: 'investments_in_unconcsolidate_fy', histField: 'investments_in_unconcsolidate_fy_h', growth: 0.08 },
+    { apiField: 'other_investments_fy', histField: 'other_investments_fy_h', growth: 0.08 },
+    { apiField: 'deferred_tax_assests_fy', histField: 'deferred_tax_assests_fy_h', growth: 0.08 },
+    { apiField: 'long_term_other_assets_total_fy', histField: 'long_term_other_assets_total_fy_h', growth: 0.06 },
+    
+    // Current assets fields - CRITICAL FOR BALANCE SHEET
+    { apiField: 'total_inventory_fy', histField: 'total_inventory_fy_h', growth: 0.10 },
+    { apiField: 'total_receivables_net_fy', histField: 'total_receivables_net_fy_h', growth: 0.12 },
+    { apiField: 'cash_n_short_term_invest_fy', histField: 'cash_n_short_term_invest_fy_h', growth: 0.15 },  // Combined field
+    { apiField: 'cash_n_equivalents_fy', histField: 'cash_n_equivalents_fy_h', growth: 0.15 },
+    { apiField: 'short_term_investments_fy', histField: 'short_term_investments_fy_h', growth: 0.08 },
+    { apiField: 'other_current_assets_total_fy', histField: 'other_current_assets_total_fy_h', growth: 0.09 },
+    { apiField: 'total_current_assets_fy', histField: 'total_current_assets_fy_h', growth: 0.11 },
+    
+    // Total assets
+    { apiField: 'total_assets_fy', histField: 'total_assets_fy_h', growth: 0.09 }
   ];
   
   // Add banking-specific fields if it's a bank
@@ -164,8 +249,19 @@ function mapApiToBalanceSheetData(apiData: any, symbol: string, isFromLocalFile:
       // Filter out null values and use the data
       const cleanData = historicalData.filter((v: any) => v !== null && v !== undefined);
       if (cleanData.length > 0) {
-        balanceSheetData[histField] = historicalData;
-        console.log(`Using existing historical data for ${histField} (${historicalData.length} values)`);
+        // Extend clean data to match expected years length, filling missing values with the last known value or 0
+        const extendedData = Array.from({ length: years }, (_, i) => {
+          if (i < historicalData.length && historicalData[i] !== null && historicalData[i] !== undefined) {
+            return historicalData[i];
+          } else if (cleanData.length > 0) {
+            // Use the last known value for missing years
+            return cleanData[cleanData.length - 1];
+          } else {
+            return 0;
+          }
+        });
+        balanceSheetData[histField] = extendedData;
+        console.log(`Using existing historical data for ${histField} (${cleanData.length} non-null values, extended to ${years} years)`);
       } else {
         // All values are null, use current value fallback
         const currentValue = fieldMap.get(apiField);
@@ -195,6 +291,22 @@ function mapApiToBalanceSheetData(apiData: any, symbol: string, isFromLocalFile:
   // Check for CWIP historical data (usually not available in API)
   if (!fieldMap.get('cwip_fy_h')) {
     balanceSheetData.cwip_fy_h = new Array(years).fill(0);
+  }
+
+  // Add calculated fields as per specification
+  const longTermInvestmentsTotal = calculateLongTermInvestmentsTotal(fieldMap);
+  if (longTermInvestmentsTotal) {
+    balanceSheetData.long_term_investments_total = longTermInvestmentsTotal;
+  }
+
+  const goodwillIntangibles = calculateGoodwillIntangibles(fieldMap);
+  if (goodwillIntangibles) {
+    balanceSheetData.goodwill_intangibles_net_fy_h = goodwillIntangibles;
+  }
+
+  const nonCurrentAssetsTotal = calculateNonCurrentAssetsTotal(fieldMap);
+  if (nonCurrentAssetsTotal) {
+    balanceSheetData.total_non_current_assets_calculated = nonCurrentAssetsTotal;
   }
   
   // Ensure sector information is properly set
@@ -230,16 +342,33 @@ async function fetchRealApiData(symbol: string): Promise<any> {
     
     // Define the balance sheet fields we need
     const balanceSheetFields = [
-      // Assets - Historical
+      // Non-current Assets fields as per specification
+      'ppe_total_net_fy_h',                        // Property, plant & equipment (net)
+      'goodwill_fy_h',                             // Goodwill
+      'intangibles_net_fy_h',                      // Intangibles (net)
+      'long_term_investments_fy_h',                // Long-term investments base
+      'investments_in_unconcsolidate_fy_h',        // Investment in unconsolidated
+      'other_investments_fy_h',                    // Other investments
+      'deferred_tax_assests_fy_h',                 // Deferred tax assets
+      'long_term_other_assets_total_fy_h',         // Other non-current assets
+      'total_noent_assets_P',                      // Total non-current assets (sum of 5 lines)
+
+      // Current Assets - Historical
+      'total_current_assets_fy_h',
+      'total_inventory_fy_h',
+      'total_receivables_net_fy_h',
+      'cash_n_short_term_invest_fy_h',   // Combined cash & short-term investments
+      'cash_n_equivalents_fy_h',         // Cash & equivalents (separate)
+      'short_term_investments_fy_h',      // Short-term investments (separate)
+      'other_current_assets_total_fy_h',  // Other current assets
+      'cash_fy_h',
+      
+      // Other Assets - Historical
       'total_assets_fy_h',
-      'ppe_total_net_fy_h',
-      'long_term_investments_fy_h',
       'loans_net_fy_h',
       'loans_gross_fy_h',
       'loan_loss_allowances_fy_h',
-      'total_current_assets_fy_h',
-      'cash_fy_h',
-      
+
       // Liabilities - Historical
       'total_liabilities_fy_h',
       'total_debt_fy_h',
@@ -247,20 +376,29 @@ async function fetchRealApiData(symbol: string): Promise<any> {
       'long_term_debt_fy_h',
       'total_deposits_fy_h',
       'total_current_liabilities_fy_h',
+      'deferred_income_current_fy_h',
       'other_liabilities_total_fy_h',
-      
+
       // Equity - Historical
       'total_equity_fy_h',
       'common_stock_par_fy_h',
       'retained_earnings_fy_h',
       'common_equity_total_fy_h',
-      
+
       // Current values (for fallback)
       'total_assets_fy',
       'total_liabilities_fy',
       'total_equity_fy',
       'total_debt_fy',
-      
+      'deferred_income_current_fy',
+      'total_inventory_fy',
+      'total_receivables_net_fy',
+      'cash_n_short_term_invest_fy',     // Combined field
+      'cash_n_equivalents_fy',
+      'short_term_investments_fy',
+      'other_current_assets_total_fy',
+      'total_current_assets_fy',
+
       // Metadata
       'sector',
       'industry',
@@ -271,10 +409,12 @@ async function fetchRealApiData(symbol: string): Promise<any> {
     
     // Build query parameters
     const queryParams = balanceSheetFields.map(field => `fields=${field}`).join('&');
-    
-    // Fetch data from InsightSentry v3 API (same as quarterly data)
+
+
+    // For now, make unfiltered request to get all fields including historical inventory data
+    // This ensures we get total_inventory_fy_h which is not available in filtered requests
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/v3/symbols/${encodeURIComponent(fullSymbol)}/fundamentals?${queryParams}`,
+      `https://${RAPIDAPI_HOST}/v3/symbols/${encodeURIComponent(fullSymbol)}/fundamentals`,
       {
         method: 'GET',
         headers: {
@@ -314,9 +454,21 @@ async function fetchRealApiData(symbol: string): Promise<any> {
           console.warn('Parser errors:', result.errors);
         }
         
-        console.log('Parsed balance sheet fields:', 
+        console.log('Parsed balance sheet fields:',
           Object.keys(result.data).filter(k => k.includes('_fy')).slice(0, 10)
         );
+
+        // Debug specific fields we're looking for
+        console.log('Deferred tax assets field:', {
+          'deferred_tax_assests_fy_h': result.data.deferred_tax_assests_fy_h,
+          'goodwill_fy_h': result.data.goodwill_fy_h,
+          'intangibles_net_fy_h': result.data.intangibles_net_fy_h
+        });
+
+        // Check if the field exists in raw parsed data
+        const rawDataArray = dataKeys.sort((a, b) => Number(a) - Number(b)).map(key => responseData.data[key]);
+        const deferredTaxField = rawDataArray.find(item => item?.id === 'deferred_tax_assests_fy_h');
+        console.log('Raw deferred tax field from API:', deferredTaxField);
         
         return result.data;
       } else if (typeof responseData.data === 'object') {

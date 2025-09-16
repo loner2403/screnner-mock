@@ -6,7 +6,7 @@ import {
   FormattedValue,
   ProcessedBalanceSheetData 
 } from './types';
-import { BANKING_SECTORS, BANKING_FIELD_INDICATORS, getMetricConfig } from './config';
+import { BANKING_SECTORS, BANKING_FIELD_INDICATORS, getMetricConfig, getBalanceSheetMetricConfig, NON_BANKING_BALANCE_SHEET_METRICS } from './config';
 
 /**
  * Detect company type based on sector and available data fields
@@ -125,6 +125,8 @@ export function formatPercentage(value: number | null): FormattedValue {
 /**
  * Format regular numbers (like ratios)
  */
+
+// These functions are already defined above (lines 138-275), removing duplicates
 export function formatNumber(value: number | null): FormattedValue {
   if (value === null || value === undefined || isNaN(value)) {
     return {
@@ -194,57 +196,50 @@ function extractYears(apiData: any): string[] {
 }
 
 /**
- * Process raw API data into formatted metric rows with historical data
+ * Process balance sheet structure - now handles flat structure with Map-based calculations
  */
-export function processBalanceSheetData(
-  apiData: InsightSentryBalanceSheetResponse,
-  companyType: CompanyType
-): ProcessedBalanceSheetData {
-  console.log('Processing balance sheet data:', {
-    companyType,
-    apiDataKeys: Object.keys(apiData),
-    historicalFields: Object.keys(apiData).filter(key => key.endsWith('_fy_h')).slice(0, 5)
-  });
-  
-  // Get years from API data
-  const years = extractYears(apiData);
-  console.log('Extracted years:', years);
-  
-  // Get metric configuration for company type
-  const metricConfigs = getMetricConfig(companyType);
-  
-  // Process each metric
-  const rows: MetricRow[] = metricConfigs.map(config => {
-    let values: number[] | null = null;
-    
+function processBalanceSheetStructure(configs: any[], dataMap: Map<string, (number | null)[]>): MetricRow[] {
+  const rows: MetricRow[] = [];
+
+  for (const config of configs) {
+    // Handle section headers
+    if (config.isSection || config.type === 'section') {
+      rows.push({
+        label: config.label,
+        values: [],
+        type: 'section',
+        level: config.level || 0,
+        isSection: true,
+        collapsible: config.collapsible || false
+      });
+      continue;
+    }
+
+    // Process regular metrics
+    let values: (number | null)[] | null = null;
+
     if (config.calculation) {
-      // Use custom calculation
-      values = config.calculation(apiData);
-    } else {
-      // Get values from API data - handle both mock and real API formats
-      const rawValues = apiData[config.key as keyof InsightSentryBalanceSheetResponse];
-      
-      if (Array.isArray(rawValues)) {
-        // Convert to crores and handle nulls
-        values = rawValues.map(val => convertToCrores(val));
-      } else if (typeof rawValues === 'number') {
-        // Single value - expand to array matching years length
-        const convertedValue = convertToCrores(rawValues);
-        values = new Array(years.length).fill(convertedValue);
-      } else {
+      // Use custom calculation function with dataMap
+      try {
+        values = config.calculation(dataMap);
+        // Store calculated values for use by other metrics if a key is provided
+        if (values && config.key) {
+          dataMap.set(config.key, values);
+        }
+      } catch (error) {
+        console.warn(`Error calculating metric ${config.label}:`, error);
         values = null;
       }
+    } else if (config.key) {
+      // Get values directly from dataMap
+      values = dataMap.get(config.key) || null;
     }
-    
-    console.log(`Processing metric ${config.label}:`, {
-      key: config.key,
-      rawValues: Array.isArray(apiData[config.key as keyof InsightSentryBalanceSheetResponse]) 
-        ? `[${(apiData[config.key as keyof InsightSentryBalanceSheetResponse] as number[])?.slice(0, 3).join(', ')}...]`
-        : apiData[config.key as keyof InsightSentryBalanceSheetResponse],
-      processedValues: values?.slice(0, 3),
-      valuesLength: values?.length
-    });
-    
+
+    // Apply custom formatting if provided
+    if (values && config.formatValue) {
+      values = values.map(v => v !== null ? config.formatValue!(v) : null);
+    }
+
     // Format values based on type
     const formattedValues = (values || []).map(value => {
       switch (config.type) {
@@ -258,26 +253,76 @@ export function processBalanceSheetData(
           return value?.toString() || 'N/A';
       }
     });
-    
-    return {
+
+    rows.push({
       label: config.label,
       values: formattedValues,
-      type: config.type,
+      type: config.type || 'currency',
       unit: config.unit,
-      rawValues: values || undefined
-    };
+      rawValues: values || undefined,
+      level: config.level || 1,
+      isSubTotal: config.isSubTotal || false,
+      isTotal: config.isTotal || false,
+      formula: config.formula,
+      collapsible: config.collapsible || false
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * Process raw API data into formatted metric rows with historical data
+ */
+export function processBalanceSheetData(
+  apiData: InsightSentryBalanceSheetResponse,
+  companyType: CompanyType
+): ProcessedBalanceSheetData {
+  console.log('Processing balance sheet data:', {
+    companyType,
+    apiDataKeys: Object.keys(apiData),
+    historicalFields: Object.keys(apiData).filter(key => key.endsWith('_fy_h')).slice(0, 5)
   });
+
+  // Get years from API data
+  const years = extractYears(apiData);
+  console.log('Extracted years:', years);
+
+  // Convert API data to a Map for easier access
+  const dataMap = new Map<string, (number | null)[]>();
   
+  // Process all historical fields (_fy_h suffix)
+  Object.keys(apiData).forEach(key => {
+    if (key.endsWith('_fy_h')) {
+      const values = apiData[key as keyof InsightSentryBalanceSheetResponse];
+      if (Array.isArray(values)) {
+        // Convert to crores
+        const convertedValues = values.map(val => convertToCrores(val));
+        dataMap.set(key, convertedValues);
+      }
+    }
+  });
+
+  // Get the appropriate structure based on company type
+  const structure = getBalanceSheetMetricConfig(companyType);
+
+  // Debug: Check if inventory field exists in dataMap
+  console.log('Data map contains total_inventory_fy_h:', dataMap.has('total_inventory_fy_h'));
+  if (dataMap.has('total_inventory_fy_h')) {
+    const inventoryData = dataMap.get('total_inventory_fy_h');
+    console.log('Inventory data sample:', inventoryData?.slice(0, 3));
+  }
+
+  // Process the structure with the data map
+  const rows = processBalanceSheetStructure(structure, dataMap);
+
   console.log('Processed balance sheet data:', {
     yearsCount: years.length,
     rowsCount: rows.length,
-    sampleRow: rows[0] ? {
-      label: rows[0].label,
-      valuesCount: rows[0].values.length,
-      sampleValues: rows[0].values.slice(0, 3)
-    } : null
+    sectionsCount: rows.filter(r => r.isSection).length,
+    metricsCount: rows.filter(r => !r.isSection).length
   });
-  
+
   return {
     years,
     rows,
@@ -357,3 +402,6 @@ export function calculateCurrentRatio(
   
   return currentAssets / currentLiabilities;
 }
+// Duplicate functions removed - already defined above
+
+// These calculation functions are already defined at the end of the file

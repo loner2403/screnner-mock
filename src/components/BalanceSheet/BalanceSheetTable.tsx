@@ -92,33 +92,74 @@ const BalanceSheetTable: React.FC<BalanceSheetProps> = ({
     );
   }
 
-  const getCellClassName = (value: string | number | null, type: string, isNegative?: boolean, isSummary?: boolean) => {
+  const getCellClassName = (value: string | number | null, type: string, isNegative?: boolean, row?: any) => {
     const baseClasses = "px-3 py-1.5 text-sm text-right whitespace-nowrap";
-    
+
     if (value === null || value === 'N/A') {
       return `${baseClasses} text-gray-400`;
     }
-    
+
     // Handle negative values (show in red)
     if (isNegative || (typeof value === 'string' && value.startsWith('-'))) {
       return `${baseClasses} text-red-600`;
     }
 
-    // Highlight summary rows (Total Assets, Total Liabilities, etc.)
-    if (isSummary) {
-      return `${baseClasses} text-gray-900 font-semibold`;
+    // Highlight total rows
+    if (row?.isTotal) {
+      return `${baseClasses} text-gray-900 font-bold bg-blue-100`;
     }
-    
+
+    // Highlight subtotal rows
+    if (row?.isSubTotal) {
+      return `${baseClasses} text-gray-900 font-semibold bg-gray-100`;
+    }
+
     return `${baseClasses} text-gray-900`;
   };
 
-  const getRowClassName = (index: number, isSummary?: boolean) => {
-    // Summary rows get special highlighting
-    if (isSummary) {
+  const getRowClassName = (row: any, index: number) => {
+    // Section headers
+    if (row.isSection) {
+      return 'bg-gray-200 border-y border-gray-300';
+    }
+
+    // Total rows get special highlighting
+    if (row.isTotal) {
       return 'bg-blue-50 border-y border-blue-200';
     }
+
+    // Subtotal rows
+    if (row.isSubTotal) {
+      return 'bg-gray-100 border-y border-gray-200';
+    }
+
     // Alternate row colors for better readability
     return index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+  };
+
+  const getLabelClassName = (row: any) => {
+    const baseClasses = "sticky left-0 z-10 bg-inherit py-1.5 text-sm whitespace-nowrap";
+
+    // Section headers
+    if (row.isSection) {
+      return `${baseClasses} px-4 font-bold text-gray-800 uppercase text-xs tracking-wider`;
+    }
+
+    // Total rows
+    if (row.isTotal) {
+      return `${baseClasses} px-4 font-bold text-gray-900`;
+    }
+
+    // Subtotal rows
+    if (row.isSubTotal) {
+      return `${baseClasses} font-semibold text-gray-800`;
+    }
+
+    // Calculate indentation based on level
+    const indentLevel = row.level || 1;
+    const paddingLeft = 4 + (indentLevel - 1) * 16; // Base 16px + 16px per level
+
+    return `${baseClasses} text-gray-700 font-medium` + ` pl-${Math.min(paddingLeft / 4, 16)}`;
   };
 
   const getCurrentQuarter = () => {
@@ -166,38 +207,56 @@ const BalanceSheetTable: React.FC<BalanceSheetProps> = ({
           {/* Table Body */}
           <tbody className="bg-white divide-y divide-gray-200">
             {data.rows.map((row, rowIndex) => {
-              const isSummary = row.label.includes('Total') || row.label === 'Equity Capital';
-              
               return (
-                <tr 
+                <tr
                   key={`${row.label}-${rowIndex}`}
-                  className={getRowClassName(rowIndex, isSummary)}
+                  className={getRowClassName(row, rowIndex)}
                 >
                   {/* Metric Label */}
-                  <td className={`sticky left-0 z-10 bg-inherit px-4 py-1.5 text-sm text-gray-700 whitespace-nowrap ${
-                    isSummary ? 'font-semibold' : 'font-medium'
-                  }`}>
-                    {row.label}
+                  <td className={getLabelClassName(row)}>
+                    {row.isSection ? (
+                      <div className="flex items-center">
+                        <span>{row.label}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <span>{row.label}</span>
+                        {row.formula && (
+                          <span className="text-xs text-gray-400 ml-2" title={row.formula}>
+                            ?
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
-                  
+
                   {/* Metric Values for each year */}
-                  {data.years.map((year, colIndex) => {
-                    const value = row.values[colIndex];
-                    const rawValue = row.rawValues?.[colIndex];
-                    const isNegative = rawValue !== null && rawValue !== undefined && rawValue < 0;
-                    const isCurrentYear = `Mar ${year}` === currentPeriod;
-                    
-                    return (
-                      <td 
-                        key={`${year}-${colIndex}`}
-                        className={`${getCellClassName(value, row.type, isNegative, isSummary)} ${
-                          isCurrentYear ? 'bg-gray-200' : ''
-                        }`}
-                      >
-                        {value || '-'}
+                  {row.isSection ? (
+                    // Section headers have empty cells
+                    data.years.map((year, colIndex) => (
+                      <td key={`${year}-${colIndex}`} className="px-3 py-1.5">
+                        <div className="h-4"></div>
                       </td>
-                    );
-                  })}
+                    ))
+                  ) : (
+                    data.years.map((year, colIndex) => {
+                      const value = row.values?.[colIndex];
+                      const rawValue = row.rawValues?.[colIndex];
+                      const isNegative = rawValue !== null && rawValue !== undefined && rawValue < 0;
+                      const isCurrentYear = `Mar ${year}` === currentPeriod;
+
+                      return (
+                        <td
+                          key={`${year}-${colIndex}`}
+                          className={`${getCellClassName(value, row.type, isNegative, row)} ${
+                            isCurrentYear ? 'bg-gray-200' : ''
+                          }`}
+                        >
+                          {value || '-'}
+                        </td>
+                      );
+                    })
+                  )}
                 </tr>
               );
             })}

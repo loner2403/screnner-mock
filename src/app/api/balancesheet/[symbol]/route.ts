@@ -186,28 +186,20 @@ function mapApiToBalanceSheetData(apiData: any, symbol: string, isFromLocalFile:
   const fieldMappings = [
     // Equity fields
     { apiField: 'common_stock_par_fy', histField: 'common_stock_par_fy_h', growth: 0.08 },
-    { apiField: 'preferred_stock_carrying_value_fy', histField: 'preferred_stock_carrying_value_fy_h', growth: 0.03 },
-    { apiField: 'paid_in_capital_fy', histField: 'paid_in_capital_fy_h', growth: 0.07 },
     { apiField: 'additional_paid_in_capital_fy', histField: 'additional_paid_in_capital_fy_h', growth: 0.05 },
     { apiField: 'common_equity_total_fy', histField: 'common_equity_total_fy_h', growth: 0.10 },
     { apiField: 'retained_earnings_fy', histField: 'retained_earnings_fy_h', growth: 0.12 },
     { apiField: 'treasury_stock_common_fy', histField: 'treasury_stock_common_fy_h', growth: -0.05 },
     { apiField: 'other_common_equity_fy', histField: 'other_common_equity_fy_h', growth: 0.03 },
     { apiField: 'minority_interest_fy', histField: 'minority_interest_fy_h', growth: 0.05 },
-    { apiField: 'shrhldrs_equity_fy', histField: 'shrhldrs_equity_fy_h', growth: 0.08 },
     { apiField: 'total_equity_fy', histField: 'total_equity_fy_h', growth: 0.08 },
-    { apiField: 'total_liabilities_shrhldrs_equity_fy', histField: 'total_liabilities_shrhldrs_equity_fy_h', growth: 0.09 },
     
     // Liabilities fields
     { apiField: 'total_debt_fy', histField: 'total_debt_fy_h', growth: 0.10 },
     { apiField: 'long_term_debt_fy', histField: 'long_term_debt_fy_h', growth: 0.08 },
     { apiField: 'short_term_debt_fy', histField: 'short_term_debt_fy_h', growth: 0.10 },
-    { apiField: 'short_term_debt_excl_current_port_fy', histField: 'short_term_debt_excl_current_port_fy_h', growth: 0.09 },
-    { apiField: 'current_port_debt_capital_leases_fy', histField: 'current_port_debt_capital_leases_fy_h', growth: 0.08 },
     { apiField: 'accounts_payable_fy', histField: 'accounts_payable_fy_h', growth: 0.09 },
     { apiField: 'deferred_income_current_fy', histField: 'deferred_income_current_fy_h', growth: 0.08 },
-    { apiField: 'income_tax_payable_fy', histField: 'income_tax_payable_fy_h', growth: 0.07 },
-    { apiField: 'dividends_payable_fy', histField: 'dividends_payable_fy_h', growth: 0.05 },
     { apiField: 'accrued_expenses_fy', histField: 'accrued_expenses_fy_h', growth: 0.07 },
     { apiField: 'other_current_liabilities_fy', histField: 'other_current_liabilities_fy_h', growth: 0.08 },
     { apiField: 'deferred_tax_liabilities_fy', histField: 'deferred_tax_liabilities_fy_h', growth: 0.06 },
@@ -381,32 +373,17 @@ async function fetchRealApiData(symbol: string): Promise<any> {
       'total_liabilities_fy_h',
       'total_debt_fy_h',
       'short_term_debt_fy_h',
-      'short_term_debt_excl_current_port_fy_h',
-      'current_port_debt_capital_leases_fy_h',
       'long_term_debt_fy_h',
-      'accounts_payable_fy_h',
-      'deferred_income_current_fy_h',
-      'income_tax_payable_fy_h',
-      'dividends_payable_fy_h',
-      'other_current_liabilities_fy_h',
       'total_deposits_fy_h',
       'total_current_liabilities_fy_h',
-      'total_non_current_liabilities_fy_h',
+      'deferred_income_current_fy_h',
       'other_liabilities_total_fy_h',
 
       // Equity - Historical
       'total_equity_fy_h',
       'common_stock_par_fy_h',
-      'preferred_stock_carrying_value_fy_h',
-      'paid_in_capital_fy_h',
-      'additional_paid_in_capital_fy_h',
       'retained_earnings_fy_h',
-      'treasury_stock_common_fy_h',
-      'other_common_equity_fy_h',
-      'shrhldrs_equity_fy_h',
-      'minority_interest_fy_h',
       'common_equity_total_fy_h',
-      'total_liabilities_shrhldrs_equity_fy_h',
 
       // Current values (for fallback)
       'total_assets_fy',
@@ -481,12 +458,7 @@ async function fetchRealApiData(symbol: string): Promise<any> {
           Object.keys(result.data).filter(k => k.includes('_fy')).slice(0, 10)
         );
 
-        // Debug specific fields we're looking for
-        console.log('Deferred tax assets field:', {
-          'deferred_tax_assests_fy_h': result.data.deferred_tax_assests_fy_h,
-          'goodwill_fy_h': result.data.goodwill_fy_h,
-          'intangibles_net_fy_h': result.data.intangibles_net_fy_h
-        });
+        
 
         // Check if the field exists in raw parsed data
         const rawDataArray = dataKeys.sort((a, b) => Number(a) - Number(b)).map(key => responseData.data[key]);

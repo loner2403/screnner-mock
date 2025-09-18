@@ -87,8 +87,8 @@ const isCacheValid = (cacheEntry: { timestamp: number; ttl: number }): boolean =
     return Date.now() - cacheEntry.timestamp < cacheEntry.ttl;
 };
 
-const ROIC_API_KEY = 'cb8ab741035240bc813f12cd897a776d';
-const ROIC_BASE_URL = 'https://api.roic.ai';
+const ROIC_API_KEY = process.env.ROIC_API_KEY;
+const ROIC_BASE_URL = process.env.ROIC_BASE_URL;
 
 // Convert number to crores format
 const toCrores = (value: number): number => {

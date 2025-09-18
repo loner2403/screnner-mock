@@ -53,13 +53,27 @@ interface MarketCapSalesData {
   quarterly_sales_bar?: number | null;
 }
 
+interface SalesMarginData {
+  date: string;
+  quarterly_sales: number;
+  gross_profit_margin: number;
+  operating_profit_margin: number;
+  net_profit_margin: number;
+  gross_profit: number;
+  operating_profit: number;
+  net_profit: number;
+  timestamp: number;
+  time: number;
+  quarterly_sales_bar?: number | null;
+}
+
 interface StockChartProps {
   symbol: string;
   className?: string;
 }
 
 type TimeFrame = "1M" | "6M" | "1Yr" | "3Yr" | "5Yr" | "10Yr" | "Max";
-type ChartType = "price" | "pe_ratio" | "market_cap_sales";
+type ChartType = "price" | "pe_ratio" | "market_cap_sales" | "sales_margin";
 
 const TIME_FRAMES: { label: string; value: TimeFrame; apiValue: string }[] = [
   { label: "1M", value: "1M", apiValue: "1M" },
@@ -142,6 +156,23 @@ const CustomTooltip = ({ active, payload, chartType }: any) => {
             </span>
           </div>
         )}
+        {/* For Sales Margin chart, always show Quarterly Sales even if no bar on this day */}
+        {chartType === "sales_margin" && data.quarterly_sales && (
+          <div className="flex items-center justify-between gap-1 sm:gap-2 mb-1">
+            <div className="flex items-center gap-1">
+              <div
+                className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
+                style={{ backgroundColor: "#87ceeb" }}
+              />
+              <span className="text-gray-600 text-xs truncate">
+                Quarter Sales
+              </span>
+            </div>
+            <span className="font-mono font-medium text-xs sm:text-sm">
+              ₹{(data.quarterly_sales / 10000000).toFixed(0)}Cr
+            </span>
+          </div>
+        )}
         {payload.map((entry: any, index: number) => {
           let displayName = entry.dataKey;
           let formattedValue = entry.value;
@@ -154,6 +185,12 @@ const CustomTooltip = ({ active, payload, chartType }: any) => {
 
           // For market_cap_sales chart, only show the ratio
           if (chartType === "market_cap_sales" && entry.dataKey !== "market_cap_sales_ratio") {
+            return null;
+          }
+
+          // For sales_margin chart, show the margin percentages
+          if (chartType === "sales_margin" &&
+              !["gross_profit_margin", "operating_profit_margin", "net_profit_margin"].includes(entry.dataKey)) {
             return null;
           }
 
@@ -170,6 +207,15 @@ const CustomTooltip = ({ active, payload, chartType }: any) => {
           } else if (entry.dataKey === "market_cap_sales_ratio") {
             displayName = "Market Cap to Sales";
             formattedValue = entry.value?.toFixed(1);
+          } else if (entry.dataKey === "gross_profit_margin") {
+            displayName = "GPM %";
+            formattedValue = `${entry.value?.toFixed(2)}%`;
+          } else if (entry.dataKey === "operating_profit_margin") {
+            displayName = "OPM %";
+            formattedValue = `${entry.value?.toFixed(2)}%`;
+          } else if (entry.dataKey === "net_profit_margin") {
+            displayName = "NPM %";
+            formattedValue = `${entry.value?.toFixed(2)}%`;
           } else if (typeof entry.dataKey === 'string' && entry.dataKey.includes("dma")) {
             displayName = entry.dataKey.toUpperCase();
             formattedValue = `₹${entry.value?.toFixed(2)}`;
@@ -205,6 +251,7 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [peData, setPEData] = useState<PEData[]>([]);
   const [marketCapSalesData, setMarketCapSalesData] = useState<MarketCapSalesData[]>([]);
+  const [salesMarginData, setSalesMarginData] = useState<SalesMarginData[]>([]);
   const [medianPE, setMedianPE] = useState<number>(25.7);
   const [medianMarketCapSales, setMedianMarketCapSales] = useState<number>(4.3);
   const [loading, setLoading] = useState(true);
@@ -512,6 +559,107 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
     }
   };
 
+  // Fetch Sales Margin data
+  const fetchSalesMarginData = async (timeframe: TimeFrame) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const apiTimeframe = TIME_FRAMES.find(tf => tf.value === timeframe)?.apiValue || "1Y";
+      const response = await fetch(`/api/sales-margin/${symbol}?timeframe=${apiTimeframe}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Sales Margin data: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.data || !Array.isArray(result.data)) {
+        throw new Error("Invalid Sales Margin data format");
+      }
+
+      // Transform and enhance Sales Margin data
+      const transformedSalesMarginData: SalesMarginData[] = result.data.map((item: any) => {
+        const timestamp = item.time ? item.time * 1000 : item.timestamp;
+        const date = new Date(timestamp);
+
+        // Format date based on timeframe
+        let dateFormat;
+        if (selectedTimeFrame === "1M") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        } else if (selectedTimeFrame === "6M") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        } else if (selectedTimeFrame === "1Yr") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "3Yr") {
+          dateFormat = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        } else if (selectedTimeFrame === "5Yr") {
+          dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
+        } else {
+          dateFormat = date.toLocaleDateString("en-US", { year: "numeric" });
+        }
+
+        return {
+          date: dateFormat,
+          quarterly_sales: parseFloat((item.quarterly_sales || 0).toFixed(0)),
+          gross_profit_margin: parseFloat((item.gross_profit_margin || 0).toFixed(2)),
+          operating_profit_margin: parseFloat((item.operating_profit_margin || 0).toFixed(2)),
+          net_profit_margin: parseFloat((item.net_profit_margin || 0).toFixed(2)),
+          gross_profit: parseFloat((item.gross_profit || 0).toFixed(0)),
+          operating_profit: parseFloat((item.operating_profit || 0).toFixed(0)),
+          net_profit: parseFloat((item.net_profit || 0).toFixed(0)),
+          timestamp: timestamp,
+          time: item.time || Math.floor(timestamp / 1000)
+        };
+      });
+
+      // Create quarterly Sales bars data - similar to other charts
+      const quarterlySalesData = new Map<string, SalesMarginData>();
+
+      transformedSalesMarginData.forEach((item) => {
+        const date = new Date(item.timestamp);
+        const year = date.getFullYear();
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${year}-Q${quarter}`;
+
+        // Keep the latest data point for each quarter
+        if (!quarterlySalesData.has(quarterKey) || date > new Date(quarterlySalesData.get(quarterKey)!.timestamp)) {
+          quarterlySalesData.set(quarterKey, item);
+        }
+      });
+
+      // Create enhanced data with quarterly Sales bars
+      const enhancedSalesMarginData = transformedSalesMarginData.map((item) => {
+        const date = new Date(item.timestamp);
+        const year = date.getFullYear();
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${year}-Q${quarter}`;
+
+        // Get the quarterly sales for this quarter
+        const quarterData = quarterlySalesData.get(quarterKey);
+        const quarterSales = quarterData ? quarterData.quarterly_sales : item.quarterly_sales;
+
+        // Only show Sales bar for the first day of each quarter
+        const isQuarterStart = quarterData && Math.abs(item.timestamp - quarterData.timestamp) < 7 * 24 * 60 * 60 * 1000;
+
+        return {
+          ...item,
+          // Show Sales bar only for quarter representative points
+          quarterly_sales_bar: isQuarterStart ? quarterSales : null,
+          // But keep quarterly sales for all days (for tooltip)
+          quarterly_sales: quarterSales
+        };
+      });
+
+      setSalesMarginData(enhancedSalesMarginData as any);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch Sales Margin data");
+      console.error("Sales Margin data fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Effect to fetch data when symbol, timeframe, or chart type changes
   useEffect(() => {
     if (chartType === "price") {
@@ -520,6 +668,8 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
       fetchPEData(selectedTimeFrame);
     } else if (chartType === "market_cap_sales") {
       fetchMarketCapSalesData(selectedTimeFrame);
+    } else if (chartType === "sales_margin") {
+      fetchSalesMarginData(selectedTimeFrame);
     }
   }, [symbol, selectedTimeFrame, chartType]);
 
@@ -534,7 +684,7 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
     );
   };
 
-  // Calculate price/PE/MarketCapSales range for right Y-axis positioning
+  // Calculate price/PE/MarketCapSales/SalesMargin range for right Y-axis positioning
   const rightAxisRange = useMemo(() => {
     if (chartType === "price") {
       if (chartData.length === 0) return { min: 0, max: 1000 };
@@ -560,9 +710,25 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
       const max = Math.max(...ratioValues);
 
       return { min: min * 0.9, max: max * 1.1 };
+    } else if (chartType === "sales_margin") {
+      if (salesMarginData.length === 0) return { min: 0, max: 50 };
+
+      // Calculate range for margin percentages (GPM, OPM, NPM)
+      const allMargins = salesMarginData.flatMap(d => [
+        d.gross_profit_margin,
+        d.operating_profit_margin,
+        d.net_profit_margin
+      ]).filter(margin => margin > 0);
+
+      if (allMargins.length === 0) return { min: 0, max: 50 };
+
+      const min = Math.min(...allMargins);
+      const max = Math.max(...allMargins);
+
+      return { min: Math.max(0, min * 0.9), max: max * 1.1 };
     }
     return { min: 0, max: 50 };
-  }, [chartData, peData, marketCapSalesData, chartType]);
+  }, [chartData, peData, marketCapSalesData, salesMarginData, chartType]);
 
   // Calculate TTM EPS/Sales range for left Y-axis positioning
   const leftAxisRange = useMemo(() => {
@@ -612,9 +778,32 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
         min: Math.max(0, min - padding), // Don't go below 0
         max: max + padding
       };
+    } else if (chartType === "sales_margin" && salesMarginData.length > 0) {
+      // Get only the quarterly sales values that have bars
+      const quarterlySalesValues = salesMarginData
+        .filter(d => d.quarterly_sales_bar !== null && d.quarterly_sales_bar !== undefined)
+        .map(d => d.quarterly_sales_bar as number);
+
+      if (quarterlySalesValues.length === 0) {
+        // Fallback to all quarterly sales values if no bar data
+        const allSalesValues = salesMarginData.map(d => d.quarterly_sales);
+        const min = Math.min(...allSalesValues);
+        const max = Math.max(...allSalesValues);
+        return { min: min * 0.9, max: max * 1.1 };
+      }
+
+      const min = Math.min(...quarterlySalesValues);
+      const max = Math.max(...quarterlySalesValues);
+
+      // Add padding to make the bars more visible
+      const padding = (max - min) * 0.2; // 20% padding
+      return {
+        min: Math.max(0, min - padding), // Don't go below 0
+        max: max + padding
+      };
     }
     return { min: 0, max: 100 }; // Default range
-  }, [peData, marketCapSalesData, chartType]);
+  }, [peData, marketCapSalesData, salesMarginData, chartType]);
 
   // Responsive chart margins
   const chartMargins = useMemo(() => {
@@ -653,6 +842,8 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 fetchPEData(selectedTimeFrame);
               } else if (chartType === "market_cap_sales") {
                 fetchMarketCapSalesData(selectedTimeFrame);
+              } else if (chartType === "sales_margin") {
+                fetchSalesMarginData(selectedTimeFrame);
               }
             }}
             variant="outline"
@@ -694,13 +885,17 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 sm:px-3">
-                {chartType === "price" ? "Price" : chartType === "pe_ratio" ? "PE Ratio" : "Market Cap / Sales"} <ChevronDown className="ml-1 h-3 w-3" />
+                {chartType === "price" ? "Price" :
+                 chartType === "pe_ratio" ? "PE Ratio" :
+                 chartType === "market_cap_sales" ? "Market Cap / Sales" :
+                 "Sales & Margin"} <ChevronDown className="ml-1 h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setChartType("price")}>Price</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setChartType("pe_ratio")}>PE Ratio</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setChartType("market_cap_sales")}>Market Cap / Sales</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setChartType("sales_margin")}>Sales & Margin</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -714,10 +909,10 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem>Sales & Margin</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setChartType("sales_margin")}>Sales & Margin</DropdownMenuItem>
                 <DropdownMenuItem>EV / EBITDA</DropdownMenuItem>
                 <DropdownMenuItem>Price to Book</DropdownMenuItem>
-                <DropdownMenuItem>Market Cap / Sales</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setChartType("market_cap_sales")}>Market Cap / Sales</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -729,10 +924,10 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>Sales & Margin</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setChartType("sales_margin")}>Sales & Margin</DropdownMenuItem>
               <DropdownMenuItem>EV / EBITDA</DropdownMenuItem>
               <DropdownMenuItem>Price to Book</DropdownMenuItem>
-              <DropdownMenuItem>Market Cap / Sales</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setChartType("market_cap_sales")}>Market Cap / Sales</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -997,6 +1192,16 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
                 tickFormatter={(value) => value.toFixed(2)}
                 width={windowWidth < 640 ? 25 : windowWidth < 1024 ? 40 : 50}
+                label={{
+                  value: 'Market Cap / Sales',
+                  angle: 90,
+                  position: 'insideRight',
+                  style: {
+                    textAnchor: 'middle',
+                    fontSize: windowWidth < 640 ? 10 : 12,
+                    fill: '#666'
+                  }
+                }}
               />
               <YAxis
                 yAxisId="sales"
@@ -1008,7 +1213,7 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 tickFormatter={(value) => `₹${(value / 10000000).toFixed(0)}Cr`}
                 width={windowWidth < 640 ? 35 : windowWidth < 1024 ? 45 : 55}
                 label={{
-                  value: 'TTM Sales',
+                  value: 'Sales',
                   angle: -90,
                   position: 'insideLeft',
                   style: {
@@ -1055,6 +1260,127 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                   name={`Median Market Cap/Sales = ${medianMarketCapSales.toFixed(2)}`}
                 />
               )}
+            </ComposedChart>
+          ) : chartType === "sales_margin" ? (
+            <ComposedChart
+              data={salesMarginData}
+              margin={chartMargins}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="date"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
+                interval={(() => {
+                  // Dynamic interval based on timeframe and screen size
+                  if (windowWidth < 640) {
+                    return 'preserveStartEnd';
+                  } else if (windowWidth < 1024) {
+                    if (selectedTimeFrame === "1M") return 2;
+                    if (selectedTimeFrame === "6M") return 10;
+                    if (selectedTimeFrame === "1Yr") return 20;
+                    if (selectedTimeFrame === "3Yr") return 60; // Show every ~2 months
+                    if (selectedTimeFrame === "5Yr") return 120; // Show every ~6 months
+                    return 200; // 10Yr, Max - very sparse
+                  } else {
+                    if (selectedTimeFrame === "1M") return 1;
+                    if (selectedTimeFrame === "6M") return 5;
+                    if (selectedTimeFrame === "1Yr") return 15;
+                    if (selectedTimeFrame === "3Yr") return 30; // Show every month
+                    if (selectedTimeFrame === "5Yr") return 60; // Show every ~3 months
+                    return 120; // 10Yr, Max - show every ~6 months
+                  }
+                })()}
+                padding={{ left: 0, right: 0 }}
+              />
+              <YAxis
+                yAxisId="margins"
+                orientation="right"
+                domain={[rightAxisRange.min, rightAxisRange.max]}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
+                tickFormatter={(value) => `${value.toFixed(1)}%`}
+                width={windowWidth < 640 ? 35 : windowWidth < 1024 ? 45 : 55}
+                label={{
+                  value: 'Margin %',
+                  angle: 90,
+                  position: 'insideRight',
+                  style: {
+                    textAnchor: 'middle',
+                    fontSize: windowWidth < 640 ? 10 : 12,
+                    fill: '#666'
+                  }
+                }}
+              />
+              <YAxis
+                yAxisId="sales"
+                orientation="left"
+                domain={[leftAxisRange.min, leftAxisRange.max]}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: windowWidth < 640 ? 9 : windowWidth < 1024 ? 10 : 11, fill: '#666' }}
+                tickFormatter={(value) => `₹${(value / 10000000).toFixed(0)}Cr`}
+                width={windowWidth < 640 ? 35 : windowWidth < 1024 ? 45 : 55}
+                label={{
+                  value: 'Quarter Sales',
+                  angle: -90,
+                  position: 'insideLeft',
+                  style: {
+                    textAnchor: 'middle',
+                    fontSize: windowWidth < 640 ? 10 : 12,
+                    fill: '#666'
+                  }
+                }}
+              />
+
+              <Tooltip content={<CustomTooltip chartType={chartType} />} />
+
+              {/* Quarterly Sales bars - render first (background) - only quarterly */}
+              <Bar
+                yAxisId="sales"
+                dataKey="quarterly_sales_bar"
+                fill="#87ceeb"
+                opacity={0.6}
+                name="Quarter Sales"
+              />
+
+              {/* Gross Profit Margin line - pink/red */}
+              <Line
+                yAxisId="margins"
+                type="monotone"
+                dataKey="gross_profit_margin"
+                stroke="#ec4899"
+                strokeWidth={2}
+                dot={false}
+                name="GPM %"
+                connectNulls={false}
+              />
+
+              {/* Operating Profit Margin line - yellow/orange */}
+              <Line
+                yAxisId="margins"
+                type="monotone"
+                dataKey="operating_profit_margin"
+                stroke="#eab308"
+                strokeWidth={2}
+                dot={false}
+                name="OPM %"
+                connectNulls={false}
+              />
+
+              {/* Net Profit Margin line - teal/green */}
+              <Line
+                yAxisId="margins"
+                type="monotone"
+                dataKey="net_profit_margin"
+                stroke="#059669"
+                strokeWidth={2}
+                dot={false}
+                name="NPM %"
+                connectNulls={false}
+              />
             </ComposedChart>
           ) : (
               <div>No chart available</div>
@@ -1132,6 +1458,37 @@ export default function StockChart({ symbol, className = "" }: StockChartProps) 
                 <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
                   <div className="w-2 sm:w-3 h-0.5 rounded" style={{ backgroundColor: "#87ceeb" }} />
                   <span className="whitespace-nowrap">TTM Sales</span>
+                </label>
+              </div>
+            </>
+          ) : chartType === "sales_margin" ? (
+            <>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <Checkbox id="gpm" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
+                <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
+                  <div className="w-2 sm:w-3 h-0.5 rounded" style={{ backgroundColor: "#ec4899" }} />
+                  <span className="whitespace-nowrap">GPM %</span>
+                </label>
+              </div>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <Checkbox id="opm" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
+                <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
+                  <div className="w-2 sm:w-3 h-0.5 rounded" style={{ backgroundColor: "#eab308" }} />
+                  <span className="whitespace-nowrap">OPM %</span>
+                </label>
+              </div>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <Checkbox id="npm" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
+                <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
+                  <div className="w-2 sm:w-3 h-0.5 rounded" style={{ backgroundColor: "#059669" }} />
+                  <span className="whitespace-nowrap">NPM %</span>
+                </label>
+              </div>
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <Checkbox id="quarter_sales" checked={true} disabled className="h-3 w-3 sm:h-4 sm:w-4" />
+                <label className="text-xs sm:text-sm font-medium cursor-pointer flex items-center space-x-1">
+                  <div className="w-2 sm:w-3 h-0.5 rounded" style={{ backgroundColor: "#87ceeb" }} />
+                  <span className="whitespace-nowrap">Quarter Sales</span>
                 </label>
               </div>
             </>

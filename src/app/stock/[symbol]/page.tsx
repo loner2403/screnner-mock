@@ -4,13 +4,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, TrendingDown } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { type StockData, formatMarketCap } from '@/lib/api';
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { type StockData } from '@/lib/api';
 import CompanyInfoSection from '@/components/CompanyInfoSection';
-import StockChart from '@/components/StockChart';
+import StockChart from '@/components/StockChart/StockChart';
 import { QuarterlyResultsTable } from '@/components/QuarterlyResults';
 import { BalanceSheetTable } from '@/components/BalanceSheet';
-import ProfitAndLossTable from '@/components/ProfitAndLoss';
+import { ProfitAndLossTable } from '@/components/ProfitAndLoss';
 import { CashFlowTable } from '@/components/CashFlow';
 import { RatiosTable } from '@/components/Ratios';
 
@@ -320,91 +320,19 @@ function StockDetailPage({ params }: StockDetailPageProps) {
                     className="mb-8"
                 />
 
-                {/* Main Content Area */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Left Column - Chart and Main Content */}
-                    <div className="lg:col-span-2 space-y-8">
-                        <StockChart
-                            symbol={symbol}
-                            currentPrice={stockData.close}
-                        />
-                        
-                        
+                {/* Stock Chart Section - Full Width */}
+                <div className="mb-8">
+                    <div className="mb-6">
+                        <h2 className="text-2xl font-bold text-gray-900">Stock Chart</h2>
+                        <p className="text-gray-600">Real-time stock data with technical indicators and financial metrics</p>
                     </div>
-
-                    {/* Right Column - Key Metrics */}
-                    <div className="space-y-6">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Key Metrics</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {stockData.price_earnings_ttm && (
-                                        <div className="flex justify-between">
-                                            <span className="text-sm text-muted-foreground">P/E Ratio</span>
-                                            <span className="font-medium">{stockData.price_earnings_ttm.toFixed(2)}</span>
-                                        </div>
-                                    )}
-                                    {stockData.price_book_fq && (
-                                        <div className="flex justify-between">
-                                            <span className="text-sm text-muted-foreground">P/B Ratio</span>
-                                            <span className="font-medium">{stockData.price_book_fq.toFixed(2)}</span>
-                                        </div>
-                                    )}
-                                    {stockData.return_on_equity_fq && (
-                                        <div className="flex justify-between">
-                                            <span className="text-sm text-muted-foreground">ROE</span>
-                                            <span className="font-medium">{stockData.return_on_equity_fq.toFixed(2)}%</span>
-                                        </div>
-                                    )}
-                                    {stockData.dividends_yield && (
-                                        <div className="flex justify-between">
-                                            <span className="text-sm text-muted-foreground">Dividend Yield</span>
-                                            <span className="font-medium">{stockData.dividends_yield.toFixed(2)}%</span>
-                                        </div>
-                                    )}
-                                    {stockData.beta_1_year && (
-                                        <div className="flex justify-between">
-                                            <span className="text-sm text-muted-foreground">Beta</span>
-                                            <span className="font-medium">{stockData.beta_1_year.toFixed(2)}</span>
-                                        </div>
-                                    )}
-                                    <div className="flex justify-between">
-                                        <span className="text-sm text-muted-foreground">Market Cap</span>
-                                        <span className="font-medium">{formatMarketCap(stockData.market_cap)}</span>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Company Info</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Symbol</p>
-                                        <p className="font-medium">{stockData.symbol_code}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Exchange</p>
-                                        <p className="font-medium">{stockData.symbol_code.split(':')[0] || 'NSE'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Country</p>
-                                        <p className="font-medium">{stockData.country}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Currency</p>
-                                        <p className="font-medium">{stockData.fundamental_currency}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+                    <StockChart
+                        symbol={symbol}
+                        className="w-full shadow-lg"
+                    />
                 </div>
+
+                
 
                 {/* Quarterly Results Section */}
                         <QuarterlyResultsTable
@@ -426,7 +354,6 @@ function StockDetailPage({ params }: StockDetailPageProps) {
                         <ProfitAndLossTable
                             symbol={symbol}
                             companyName={stockData.name}
-                            sector={stockData.sector}
                             className="mt-8"
                         />
 

@@ -62,6 +62,11 @@ const mockStockData = {
       face_value: 1,
       sector: "Private Sector Bank",
       industry: "Banking",
+      website: "https://www.hdfcbank.com",
+      bse_code: "500180",
+      nse_code: "HDFCBANK",
+      description: "HDFC Bank Limited is an Indian banking and financial services company headquartered in Mumbai, Maharashtra.",
+      business_segments: ["Retail Banking", "Wholesale Banking", "Treasury", "Other Banking Operations"],
       // Financial statement data for calculations
       total_assets_fq: 2500000000000,
       total_equity_fq: 350000000000,
@@ -196,7 +201,9 @@ export async function GET() {
       "total_debt_fq", "net_income_ttm", "oper_income_ttm", "total_shares_outstanding_current",
       "return_on_equity_fq", "return_on_assets_fq", "free_cash_flow_ttm",
       // Calculated fields
-      "return_on_invested_capital_fq", "book_value", "price_book_fq", "face_value"
+      "return_on_invested_capital_fq", "book_value", "price_book_fq", "face_value",
+      // Company metadata
+      "website", "bse_code", "nse_code", "description", "business_segments"
     ],
     available_exchanges: ["NSE", "BSE"],
     available_countries: ["IN"],

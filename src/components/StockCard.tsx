@@ -18,17 +18,26 @@ export default function StockCard({ stock }: StockCardProps) {
   const changeBgColor = isPositive ? 'bg-green-950/30 border-green-900/50' : 'bg-red-950/30 border-red-900/50';
   const glowColor = isPositive ? 'hover:shadow-green-400/20' : 'hover:shadow-red-400/20';
 
-  // Generate mini sparkline data
+  // Generate mini sparkline data using seeded random for consistency
   useEffect(() => {
     const data = [];
     const basePrice = stock.close;
+
+    // Create a simple seeded random function based on stock symbol
+    const seed = stock.symbol_code.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    let rng = seed;
+    const seededRandom = () => {
+      rng = (rng * 9301 + 49297) % 233280;
+      return rng / 233280;
+    };
+
     for (let i = 0; i < 20; i++) {
-      const variation = (Math.random() - 0.5) * 0.05;
+      const variation = (seededRandom() - 0.5) * 0.05;
       data.push(basePrice * (1 + variation));
     }
     data.push(stock.close); // End with current price
     setSparklineData(data);
-  }, [stock.close]);
+  }, [stock.close, stock.symbol_code]);
 
   const handleClick = () => {
     const symbolParam = encodeURIComponent(stock.symbol_code);

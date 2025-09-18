@@ -307,4 +307,36 @@ export async function fetchRatiosData(symbol: string): Promise<RatiosDataRespons
         throw error;
     }
 }
+
+// Search stocks by name interface
+export interface SearchResult {
+    symbol: string;
+    name: string;
+    exchange?: string;
+}
+
+export interface SearchResponse {
+    results: SearchResult[];
+}
+
+// Search stocks by company name using ROIC API
+export async function searchStocksByName(query: string, limit: number = 10): Promise<SearchResponse> {
+    try {
+        const response = await fetch(`/api/search?query=${encodeURIComponent(query)}&limit=${limit}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error searching stocks by name:', error);
+        throw error;
+    }
+}
 ''

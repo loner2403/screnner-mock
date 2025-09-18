@@ -1,334 +1,317 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  TrendingUp, 
-  TrendingDown, 
+import { Button } from "@/components/ui/button";
+import {
   Search as SearchIcon,
-  Activity,
-  BarChart3,
-  ArrowUpRight,
-  ArrowDownRight,
-  Clock,
-  Star
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
-import { searchStocks, type StockData, formatMarketCap } from '@/lib/api';
+import { searchStocksByName, type SearchResult } from '@/lib/api';
 
 export default function HomePage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
-  const [stocks, setStocks] = useState<StockData[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(true);
+  const [showResults, setShowResults] = useState(false);
+  const [navigating, setNavigating] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // Load initial stocks
-    loadStocks();
-  }, []);
+  // Debounced search function
+  const performSearch = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
 
-  const loadStocks = async (search = '') => {
     setLoading(true);
     try {
-      const response = await searchStocks({
-        searchTerm: search,
-        page: 1,
-        sortBy: 'market_cap',
-        sortOrder: 'desc',
-      });
-      setStocks(response.data || []);
+      const response = await searchStocksByName(query, 8);
+      setSearchResults(response.results);
+      setShowResults(true);
     } catch (error) {
-      console.error('Error loading stocks:', error);
+      console.error('Error searching stocks:', error);
+      setSearchResults([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
+  // Handle search input changes with debouncing
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Set new timeout for debounced search
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(value);
+    }, 300);
+  };
+
+  // Handle clicking on a search result
+  const handleResultClick = async (result: SearchResult) => {
+    setNavigating(true);
+    setShowResults(false);
+
+    try {
+      // For testing, let's try with a known working symbol first
+      if (result.name.toLowerCase().includes('jindal')) {
+        router.push('/stock/NSE%3AJINDALSTEL');
+        return;
+      }
+
+      // First try to search by company name to find the correct symbol in our stocks API
+      const response = await fetch('/api/stocks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          searchTerm: result.name,
+          limit: 10,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data.data && data.data.length > 0) {
+          // Try multiple matching strategies
+          let exactMatch = null;
+
+          // Strategy 1: Exact name match
+          exactMatch = data.data.find((stock: any) =>
+            stock.name.toLowerCase() === result.name.toLowerCase()
+          );
+
+          // Strategy 2: Partial name match
+          if (!exactMatch) {
+            exactMatch = data.data.find((stock: any) =>
+              stock.name.toLowerCase().includes(result.name.toLowerCase()) ||
+              result.name.toLowerCase().includes(stock.name.toLowerCase())
+            );
+          }
+
+          // Strategy 3: Company name keywords match
+          if (!exactMatch) {
+            const resultKeywords = result.name.toLowerCase().split(' ').filter(word => word.length > 3);
+            exactMatch = data.data.find((stock: any) => {
+              const stockKeywords = stock.name.toLowerCase().split(' ');
+              return resultKeywords.some((keyword: string) =>
+                stockKeywords.some((stockWord: string) => stockWord.includes(keyword) || keyword.includes(stockWord))
+              );
+            });
+          }
+
+          if (exactMatch) {
+            const symbolParam = encodeURIComponent(exactMatch.symbol_code);
+            router.push(`/stock/${symbolParam}`);
+            return;
+          }
+        }
+      }
+
+      // Fallback: try with symbol transformation
+      let transformedSymbol = result.symbol;
+      if (transformedSymbol.includes('.NS')) {
+        transformedSymbol = transformedSymbol.replace('.NS', '');
+        transformedSymbol = `NSE:${transformedSymbol}`;
+      } else if (transformedSymbol.includes('.BO')) {
+        transformedSymbol = transformedSymbol.replace('.BO', '');
+        transformedSymbol = `BSE:${transformedSymbol}`;
+      }
+
+      const symbolParam = encodeURIComponent(transformedSymbol);
+      router.push(`/stock/${symbolParam}`);
+
+    } catch (error) {
+      console.error('Error finding stock:', error);
+      alert(`Unable to find stock data for ${result.name}. Please try searching for a different company.`);
+    } finally {
+      setNavigating(false);
+    }
+  };
+
+  // Handle form submission
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    loadStocks(searchTerm);
+    if (searchResults.length > 0) {
+      handleResultClick(searchResults[0]);
+    }
   };
 
-  const formatPrice = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
+  // Handle click outside to close results
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setShowResults(false);
+      }
+    };
 
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
-
-  const indices = [
-    { name: 'NIFTY 50', value: 22513.70, change: 1.56, icon: BarChart3 },
-    { name: 'SENSEX', value: 73667.96, change: 0.56, icon: TrendingUp },
-    { name: 'BANK NIFTY', value: 48125.35, change: -0.32, icon: Activity },
+  // Popular companies for quick access
+  const popularStocks = [
+    'RELIANCE',
+    'TCS',
+    'HDFC BANK',
+    'INFOSYS',
+    'ICICI BANK',
+    'JINDAL',
+    'ITC',
+    'BHARTI',
+    'TATA MOTORS',
+    'AXIS BANK'
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              {/* Logo */}
-              <div className="relative h-10 w-10">
-                <svg viewBox="0 0 100 100" className="w-full h-full">
-                  <path 
-                    d="M25 45 Q20 35 15 30 Q15 25 20 25 Q25 30 30 35 L35 40 Q40 35 50 35 Q60 35 65 40 L70 35 Q75 30 80 25 Q85 25 85 30 Q80 35 75 45 M35 40 Q30 50 30 60 Q30 75 50 75 Q70 75 70 60 Q70 50 65 40"
-                    fill="none"
-                    stroke="hsl(187, 92%, 43%)"
-                    strokeWidth="3"
-                  />
-                  <path 
-                    d="M75 70 L75 25 M65 35 L75 25 L85 35"
-                    stroke="hsl(187, 92%, 43%)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">BullScreen</h1>
-                <p className="text-xs text-muted-foreground">Indian Stock Screener</p>
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 flex flex-col items-center justify-center px-4">
+      {/* Header Navigation - Fixed at top */}
+      <header className="fixed top-0 left-0 right-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-700/50">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-r from-teal-400 to-cyan-400 rounded-lg flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-900" fill="currentColor">
+                <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
             </div>
-            
-            <div className="flex items-center gap-4">
-              <Badge variant={marketOpen ? "default" : "secondary"} className="gap-1">
-                <div className={`w-2 h-2 rounded-full ${marketOpen ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
-                Market {marketOpen ? 'Open' : 'Closed'}
-              </Badge>
-              <Button variant="outline" size="sm">
-                <Star className="h-4 w-4 mr-1" />
-                Watchlist
-              </Button>
+            <div>
+              <h1 className="text-xl font-bold text-white">
+                Bull<span className="text-teal-400"> AI</span>
+              </h1>
+              <p className="text-xs text-slate-400">Indian Stock Screener</p>
             </div>
           </div>
+
+          <nav className="hidden md:flex items-center space-x-8">
+            <a href="#" className="text-slate-300 hover:text-white transition-colors">Home</a>
+            <a href="#" className="text-slate-300 hover:text-white transition-colors">Features</a>
+            <a href="#" className="text-slate-300 hover:text-white transition-colors">Pricing</a>
+            <a href="#" className="text-slate-300 hover:text-white transition-colors">Contact</a>
+            <button className="px-4 py-2 border border-teal-400 text-teal-400 rounded-lg hover:bg-teal-400 hover:text-slate-900 transition-all">
+              Login →
+            </button>
+          </nav>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="container mx-auto px-4 py-8">
-        <div className="text-center mb-8">
-          <h2 className="text-4xl font-bold mb-4">
-            Track Indian Markets in <span className="text-primary">Real-Time</span>
-          </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            Analyze NSE & BSE stocks with advanced screening tools and live market data
+      {/* Main Content - Centered */}
+      <div className="w-full max-w-4xl text-center pt-20">
+        {/* Badge */}
+        <div className="inline-flex items-center px-4 py-2 bg-slate-800/50 border border-slate-700 rounded-full text-sm text-slate-300 mb-8">
+          <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+          No app download, track stocks in real-time
+        </div>
+
+        {/* Logo and Title */}
+        <div className="mb-8">
+          <h1 className="text-5xl lg:text-6xl font-bold mb-4">
+            <span className="text-white">Bull</span><span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-300">AI</span>
+          </h1>
+          <p className="text-slate-300 text-lg max-w-2xl mx-auto">
+            The 1st AI assistant for the Indian equities market
           </p>
         </div>
 
-        {/* Market Indices */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          {indices.map((index) => {
-            const Icon = index.icon;
-            const isPositive = index.change >= 0;
-            return (
-              <Card key={index.name} className="hover:shadow-lg transition-all duration-300">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-medium">{index.name}</CardTitle>
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <p className="text-2xl font-bold">{index.value.toLocaleString()}</p>
-                      <div className="flex items-center mt-1">
-                        {isPositive ? (
-                          <ArrowUpRight className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <ArrowDownRight className="h-4 w-4 text-red-500" />
-                        )}
-                        <span className={`text-sm font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                          {isPositive ? '+' : ''}{index.change}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        {/* Search Container - Outside of box */}
+        <div ref={searchContainerRef} className="relative mb-8 max-w-3xl mx-auto">
+          <form onSubmit={handleSubmit} className="relative">
+            <div className="relative">
+              <SearchIcon className="absolute left-6 top-1/2 transform -translate-y-1/2 h-6 w-6 text-slate-400" />
+              <Input
+                ref={inputRef}
+                type="text"
+                placeholder="Search for a company"
+                value={searchTerm}
+                onChange={handleSearchChange}
+                onFocus={() => searchTerm && setShowResults(true)}
+                className="w-full pl-16 pr-20 py-6 text-xl bg-slate-900/70 border-2 border-slate-600 rounded-2xl text-white placeholder:text-slate-400 focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all shadow-2xl backdrop-blur-sm"
+              />
+              {loading && (
+                <Loader2 className="absolute right-6 top-1/2 transform -translate-y-1/2 h-6 w-6 text-teal-400 animate-spin" />
+              )}
+            </div>
+          </form>
 
-        {/* Search Bar */}
-        <Card className="mb-8">
-          <CardContent className="p-6">
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <div className="relative flex-1">
-                <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Search by company name or symbol..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Button type="submit" className="bg-primary hover:bg-primary/90">
-                Search
-              </Button>
-            </form>
-            
-            {/* Quick Search Tags */}
-            <div className="flex flex-wrap gap-2 mt-4">
-              <span className="text-sm text-muted-foreground">Popular:</span>
-              {['RELIANCE', 'TCS', 'HDFC BANK', 'INFOSYS', 'ICICI BANK'].map((tag) => (
-                <Badge
-                  key={tag}
-                  variant="secondary"
-                  className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
-                  onClick={() => {
-                    setSearchTerm(tag);
-                    loadStocks(tag);
-                  }}
+          {/* Search Results Dropdown */}
+          {showResults && searchResults.length > 0 && !navigating && (
+            <div className="absolute top-full left-0 right-0 bg-slate-800/95 border border-slate-600 rounded-xl shadow-2xl z-50 mt-2 max-h-80 overflow-y-auto backdrop-blur-xl">
+              {searchResults.map((result, index) => (
+                <div
+                  key={`${result.symbol}-${index}`}
+                  onClick={() => handleResultClick(result)}
+                  className="flex items-center justify-between p-4 hover:bg-slate-700/50 cursor-pointer border-b border-slate-700 last:border-b-0 transition-colors"
                 >
-                  {tag}
-                </Badge>
+                  <div>
+                    <div className="font-medium text-white">{result.name}</div>
+                    <div className="text-sm text-slate-400">{result.symbol}</div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-teal-400" />
+                </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          )}
 
-        {/* Stocks Grid */}
-        <Tabs defaultValue="all" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-4">
-            <TabsTrigger value="all">All Stocks</TabsTrigger>
-            <TabsTrigger value="gainers">Top Gainers</TabsTrigger>
-            <TabsTrigger value="losers">Top Losers</TabsTrigger>
-            <TabsTrigger value="active">Most Active</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="all" className="mt-6">
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          {/* Navigation Loading State */}
+          {navigating && (
+            <div className="absolute top-full left-0 right-0 bg-slate-800/95 border border-slate-600 rounded-xl shadow-2xl z-50 mt-2 backdrop-blur-xl">
+              <div className="p-4 text-center text-slate-300 flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-teal-400" />
+                Loading stock data...
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {stocks.map((stock) => {
-                  const isPositive = stock.change && stock.change >= 0;
-                  return (
-                    <Card
-                      key={stock.symbol_code}
-                      className="hover:shadow-xl transition-all duration-300 cursor-pointer group"
-                      onClick={() => {
-                        const symbolParam = encodeURIComponent(stock.symbol_code);
-                        router.push(`/stock/${symbolParam}`);
-                      }}
-                    >
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <CardTitle className="text-base font-semibold line-clamp-1">
-                              {stock.name}
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                              {stock.symbol_code}
-                            </CardDescription>
-                          </div>
-                          <Badge variant={isPositive ? "default" : "destructive"} className="text-xs">
-                            {isPositive ? '+' : ''}{stock.change?.toFixed(2)}%
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-end">
-                            <span className="text-2xl font-bold">{formatPrice(stock.close)}</span>
-                            {isPositive ? (
-                              <TrendingUp className="h-5 w-5 text-green-500" />
-                            ) : (
-                              <TrendingDown className="h-5 w-5 text-red-500" />
-                            )}
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                              <p className="text-muted-foreground">Market Cap</p>
-                              <p className="font-medium">{formatMarketCap(stock.market_cap)}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Volume</p>
-                              <p className="font-medium">{(stock.volume / 1000000).toFixed(1)}M</p>
-                            </div>
-                          </div>
-                          
-                          {stock.high && stock.low && (
-                            <div className="pt-2 border-t">
-                              <div className="flex justify-between text-xs">
-                                <span className="text-muted-foreground">Day Range</span>
-                                <span className="font-medium">
-                                  {formatPrice(stock.low)} - {formatPrice(stock.high)}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </section>
+            </div>
+          )}
 
-      {/* Features Section */}
-      <section className="bg-muted/50 py-12 mt-12">
-        <div className="container mx-auto px-4">
-          <h3 className="text-2xl font-bold text-center mb-8">Why Choose BullScreen?</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card>
-              <CardHeader>
-                <BarChart3 className="h-8 w-8 text-primary mb-2" />
-                <CardTitle className="text-lg">Advanced Analytics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Comprehensive financial metrics, ratios, and technical indicators
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <Clock className="h-8 w-8 text-primary mb-2" />
-                <CardTitle className="text-lg">Real-Time Data</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Live price updates and instant market movements monitoring
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <SearchIcon className="h-8 w-8 text-primary mb-2" />
-                <CardTitle className="text-lg">Smart Screening</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Filter stocks by multiple parameters to find opportunities
-                </p>
-              </CardContent>
-            </Card>
+          {/* No Results Message */}
+          {showResults && searchTerm && searchResults.length === 0 && !loading && (
+            <div className="absolute top-full left-0 right-0 bg-slate-800/95 border border-slate-600 rounded-xl shadow-2xl z-50 mt-2 backdrop-blur-xl">
+              <div className="p-4 text-center text-slate-400">
+                No companies found for "{searchTerm}"
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Popular Companies */}
+        <div className="mb-8">
+          <p className="text-slate-400 mb-4 text-sm">Or search popular stocks:</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {popularStocks.slice(0, 6).map((company) => (
+              <button
+                key={company}
+                onClick={() => {
+                  setSearchTerm(company);
+                  performSearch(company);
+                }}
+                className="px-4 py-2 text-sm bg-slate-700/50 text-slate-300 border border-slate-600 rounded-lg hover:bg-slate-600/50 hover:text-white hover:border-teal-400 transition-all"
+              >
+                {company}
+              </button>
+            ))}
           </div>
         </div>
-      </section>
+
+        {/* Additional Features or Description */}
+        <div className="text-center space-y-2 text-slate-400">
+          <p>Instant search integration for real-time insights.</p>
+          <p>AI scans market data for comprehensive analysis.</p>
+        </div>
+      </div>
     </div>
   );
 }

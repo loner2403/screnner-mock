@@ -83,6 +83,15 @@ const BalanceSheetTable: React.FC<BalanceSheetProps> = ({
     return <ErrorDisplay error={error} onRetry={refetch} />;
   }
 
+  // Debug: Log the data received by the component
+  console.log('BalanceSheetTable received data:', {
+    hasData: !!data,
+    rowsCount: data?.rows?.length || 0,
+    yearsCount: data?.years?.length || 0,
+    firstFewRows: data?.rows?.slice(0, 5)?.map(r => ({ label: r.label, values: r.values?.slice(0, 3) })) || [],
+    years: data?.years?.slice(0, 5) || []
+  });
+
   // Show empty state
   if (!data || data.rows.length === 0 || data.years.length === 0) {
     return (

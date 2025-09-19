@@ -358,7 +358,7 @@ function StockDetailPage({ params }: StockDetailPageProps) {
                         />
 
                 {/* Cash Flow Section */}
-                        '''                        <CashFlowTable
+                        <CashFlowTable
                             symbol={symbol}
                             companyName={stockData.name}
                             sector={stockData.sector}
@@ -371,7 +371,7 @@ function StockDetailPage({ params }: StockDetailPageProps) {
                             companyName={stockData.name}
                             sector={stockData.sector}
                             className="mt-8"
-                        />'''
+                        />
             </div>
         </div>
     );

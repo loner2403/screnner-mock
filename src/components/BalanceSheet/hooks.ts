@@ -21,7 +21,7 @@ const dataCache = new Map<string, {
   timestamp: number;
 }>();
 
-const CACHE_DURATION = 10 * 1000; // 10 seconds for testing
+const CACHE_DURATION = 1 * 1000; // 1 second for testing to avoid caching issues
 
 export function useBalanceSheetData(
   symbol: string, 

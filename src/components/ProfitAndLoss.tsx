@@ -40,7 +40,8 @@ interface ProfitAndLossTableProps {
     className?: string;
 }
 
-const formatNumber = (value: number): string => {
+const formatNumber = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
     if (value === 0) return '0';
     if (value >= 1000) {
         return Math.round(value).toLocaleString('en-IN');
@@ -48,7 +49,8 @@ const formatNumber = (value: number): string => {
     return value.toFixed(2);
 };
 
-const formatPercent = (value: number): string => {
+const formatPercent = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
     return `${value}%`;
 };
 

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { ApiResponseParser } from '@/lib/api-parser';
 
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const RAPIDAPI_HOST = 'insightsentry.p.rapidapi.com';
+const ROIC_API_KEY = process.env.ROIC_API_KEY;
+
+if (!ROIC_API_KEY) {
+  throw new Error('ROIC_API_KEY environment variable is required');
+}
+const ROIC_BASE_URL = 'https://api.roic.ai/v2';
 
 // Generate mock balance sheet data for fallback
 function generateMockBalanceSheetData(symbol: string) {
@@ -88,461 +91,203 @@ function generateMockBalanceSheetData(symbol: string) {
   }
 }
 
-// Map real API response data to balance sheet format with historical arrays
-function mapApiToBalanceSheetData(apiData: any, symbol: string, isFromLocalFile: boolean = false) {
-  console.log(`Mapping API data for ${symbol}, fromLocalFile: ${isFromLocalFile}`);
-  
+// Map ROIC API response data to balance sheet format
+function mapRoicToBalanceSheetData(roicData: any[], symbol: string): any {
+  console.log(`Mapping ROIC API data for ${symbol}`);
+
+  if (!Array.isArray(roicData) || roicData.length === 0) {
+    console.log('No ROIC data available, using mock fallback');
+    return null;
+  }
+
+  // Sort data by fiscal year (most recent first)
+  const sortedData = roicData.sort((a, b) => {
+    const yearA = parseInt(a.fiscal_year || '0');
+    const yearB = parseInt(b.fiscal_year || '0');
+    return yearB - yearA;
+  });
+
+  // Get years from the data
+  const years = sortedData.map(item => item.fiscal_year || item.period_label).filter(Boolean);
+
   const isBank = symbol.includes('BANK') || symbol.includes('HDFC') || symbol.includes('ICICI') || symbol.includes('SBIN');
-  
-  // Create a field map depending on the data source
-  const fieldMap = new Map();
-  
-  if (isFromLocalFile && Array.isArray(apiData)) {
-    // Local JSON file format: array of {id, value} objects
-    apiData.forEach((field: any) => {
-      if (field.id && field.value !== undefined) {
-        fieldMap.set(field.id, field.value);
-      }
-    });
-    console.log(`Loaded ${fieldMap.size} fields from local JSON`);
-  } else if (apiData && typeof apiData === 'object') {
-    // V3 API format: flat object with field names as keys
-    Object.entries(apiData).forEach(([key, value]) => {
-      fieldMap.set(key, value);
-    });
-    console.log(`Loaded ${fieldMap.size} fields from API response`);
+
+  // Helper function to extract historical array from sorted data
+  function extractHistoricalArray(fieldName: string): (number | null)[] {
+    return sortedData.map(item => {
+      const value = item[fieldName];
+      return value !== null && value !== undefined && !isNaN(value) ? Number(value) : null;
+    }).reverse(); // Reverse to get chronological order (oldest to newest)
   }
-  
-  console.log('Sample fields:', Array.from(fieldMap.keys()).slice(0, 10));
-  console.log('Historical fields found:', Array.from(fieldMap.keys()).filter(key => key.includes('_fy_h')).slice(0, 10));
-  
-  // Generate historical data arrays from current values (for testing)
-  // In real implementation, you would fetch actual historical data
-  function generateHistoricalArray(currentValue: number, years: number = 12, growthRate: number = 0.15): number[] {
-    if (!currentValue || isNaN(currentValue)) return new Array(years).fill(0);
-    
-    return Array.from({ length: years }, (_, i) => {
-      // Generate backward progression
-      const yearIndex = years - 1 - i;
-      const adjustedValue = currentValue / Math.pow(1 + growthRate, yearIndex);
-      return Math.round(adjustedValue);
-    });
+
+  // Helper function to convert values from original currency to crores
+  function convertToCrores(value: number | null): number | null {
+    if (value === null || value === undefined) return null;
+    // ROIC API returns values in original currency, convert to crores (divide by 10^7)
+    const crores = value / 10000000;
+    return Math.round(crores * 100) / 100; // Round to 2 decimal places
   }
-  
-  const years = 12;
-  const historicalYears: string[] = Array.from({ length: years }, (_, i) => (2014 + i).toString());
-  
+
   const balanceSheetData: any = {
-    years: historicalYears,
-    company_name: symbol,
-    sector: fieldMap.get('sector-i18n-en') || fieldMap.get('sector') || (isBank ? 'Private Sector Bank' : 'Technology'),
-    'sector-i18n-en': fieldMap.get('sector-i18n-en') || fieldMap.get('sector'),
+    years: years.reverse(), // Chronological order (oldest to newest)
+    company_name: sortedData[0]?.ticker || symbol,
+    sector: isBank ? 'Private Sector Bank' : 'Technology',
+    'sector-i18n-en': isBank ? 'Private Sector Bank' : 'Technology',
     report_type: isBank ? 'banking' : 'non-banking'
   };
-  
-  // Handle calculated fields for non-current assets as per specification
-  function calculateLongTermInvestmentsTotal(data: Map<string, any>): number[] | null {
-    const longTerm = data.get('long_term_investments_fy_h') || [];
-    const unconsolidated = data.get('investments_in_unconcsolidate_fy_h') || [];
-    const other = data.get('other_investments_fy_h') || [];
 
-    if (Array.isArray(longTerm) && longTerm.length > 0) {
-      return longTerm.map((lt: number | null, i: number) =>
-        (lt || 0) + (unconsolidated[i] || 0) + (other[i] || 0)
-      );
-    }
-    return null;
-  }
-
-  function calculateGoodwillIntangibles(data: Map<string, any>): number[] | null {
-    const goodwill = data.get('goodwill_fy_h') || [];
-    const intangibles = data.get('intangible_assets_fy_h') || [];
-
-    if (Array.isArray(goodwill) && goodwill.length > 0) {
-      return goodwill.map((g: number | null, i: number) =>
-        (g || 0) + (intangibles[i] || 0)
-      );
-    }
-    return null;
-  }
-
-  function calculateNonCurrentAssetsTotal(data: Map<string, any>): number[] | null {
-    const ppe = data.get('ppe_total_net_fy_h') || [];
-    const goodwillIntangibles = calculateGoodwillIntangibles(data) || [];
-    const longTermInv = calculateLongTermInvestmentsTotal(data) || [];
-    const deferredTax = data.get('deferred_tax_assests_fy_h') || [];
-    const otherAssets = data.get('long_term_other_assets_total_fy_h') || [];
-
-    if (Array.isArray(ppe) && ppe.length > 0) {
-      return ppe.map((p: number | null, i: number) =>
-        (p || 0) + (goodwillIntangibles[i] || 0) + (longTermInv[i] || 0) +
-        (deferredTax[i] || 0) + (otherAssets[i] || 0)
-      );
-    }
-    return null;
-  }
-
-  // Map balance sheet fields - prefer historical data if available
+  // Define field mappings from ROIC API fields to expected balance sheet fields
   const fieldMappings = [
-    // Equity fields
-    { apiField: 'common_stock_par_fy', histField: 'common_stock_par_fy_h', growth: 0.08 },
-    { apiField: 'additional_paid_in_capital_fy', histField: 'additional_paid_in_capital_fy_h', growth: 0.05 },
-    { apiField: 'common_equity_total_fy', histField: 'common_equity_total_fy_h', growth: 0.10 },
-    { apiField: 'retained_earnings_fy', histField: 'retained_earnings_fy_h', growth: 0.12 },
-    { apiField: 'treasury_stock_common_fy', histField: 'treasury_stock_common_fy_h', growth: -0.05 },
-    { apiField: 'other_common_equity_fy', histField: 'other_common_equity_fy_h', growth: 0.03 },
-    { apiField: 'minority_interest_fy', histField: 'minority_interest_fy_h', growth: 0.05 },
-    { apiField: 'total_equity_fy', histField: 'total_equity_fy_h', growth: 0.08 },
-    
-    // Liabilities fields
-    { apiField: 'total_debt_fy', histField: 'total_debt_fy_h', growth: 0.10 },
-    { apiField: 'long_term_debt_fy', histField: 'long_term_debt_fy_h', growth: 0.08 },
-    { apiField: 'short_term_debt_fy', histField: 'short_term_debt_fy_h', growth: 0.10 },
-    { apiField: 'accounts_payable_fy', histField: 'accounts_payable_fy_h', growth: 0.09 },
-    { apiField: 'deferred_income_current_fy', histField: 'deferred_income_current_fy_h', growth: 0.08 },
-    { apiField: 'accrued_expenses_fy', histField: 'accrued_expenses_fy_h', growth: 0.07 },
-    { apiField: 'other_current_liabilities_fy', histField: 'other_current_liabilities_fy_h', growth: 0.08 },
-    { apiField: 'deferred_tax_liabilities_fy', histField: 'deferred_tax_liabilities_fy_h', growth: 0.06 },
-    { apiField: 'total_current_liabilities_fy', histField: 'total_current_liabilities_fy_h', growth: 0.12 },
-    { apiField: 'total_noncurrent_liabilities_fy', histField: 'total_non_current_liabilities_fy_h', growth: 0.07 },
-    { apiField: 'total_liabilities_fy', histField: 'total_liabilities_fy_h', growth: 0.11 },
-    { apiField: 'other_liabilities_total_fy', histField: 'other_liabilities_total_fy_h', growth: 0.10 },
+    // ASSETS
+    // Non-current Assets
+    { roicField: 'bs_net_fix_asset', balanceSheetField: 'ppe_total_net_fy_h' }, // Property, plant & equipment (net)
+    { roicField: 'bs_goodwill', balanceSheetField: 'goodwill_fy_h' }, // Goodwill
+    { roicField: 'bs_other_intangible_assets_detailed', balanceSheetField: 'intangibles_net_fy_h' }, // Other intangible assets
+    { roicField: 'bs_disclosed_intangibles', balanceSheetField: 'intangibles_total_fy_h' }, // Total intangibles
+    { roicField: 'bs_other_noncurrent_assets_detailed', balanceSheetField: 'other_noncurrent_assets_fy_h' }, // Other non-current assets
+    { roicField: 'bs_tot_non_cur_asset', balanceSheetField: 'total_noncurrent_assets_fy_h' }, // Total non-current assets
 
-    // Non-current assets fields
-    { apiField: 'ppe_total_net_fy', histField: 'ppe_total_net_fy_h', growth: 0.07 },
-    { apiField: 'goodwill_fy', histField: 'goodwill_fy_h', growth: 0.05 },
-    { apiField: 'intangibles_net_fy', histField: 'intangibles_net_fy_h', growth: 0.05 },
-    { apiField: 'long_term_investments_fy', histField: 'long_term_investments_fy_h', growth: 0.08 },
-    { apiField: 'investments_in_unconcsolidate_fy', histField: 'investments_in_unconcsolidate_fy_h', growth: 0.08 },
-    { apiField: 'other_investments_fy', histField: 'other_investments_fy_h', growth: 0.08 },
-    { apiField: 'deferred_tax_assests_fy', histField: 'deferred_tax_assests_fy_h', growth: 0.08 },
-    { apiField: 'long_term_other_assets_total_fy', histField: 'long_term_other_assets_total_fy_h', growth: 0.06 },
-    
-    // Current assets fields - CRITICAL FOR BALANCE SHEET
-    { apiField: 'total_inventory_fy', histField: 'total_inventory_fy_h', growth: 0.10 },
-    { apiField: 'total_receivables_net_fy', histField: 'total_receivables_net_fy_h', growth: 0.12 },
-    { apiField: 'cash_n_short_term_invest_fy', histField: 'cash_n_short_term_invest_fy_h', growth: 0.15 },  // Combined field
-    { apiField: 'cash_n_equivalents_fy', histField: 'cash_n_equivalents_fy_h', growth: 0.15 },
-    { apiField: 'short_term_investments_fy', histField: 'short_term_investments_fy_h', growth: 0.08 },
-    { apiField: 'other_current_assets_total_fy', histField: 'other_current_assets_total_fy_h', growth: 0.09 },
-    { apiField: 'total_current_assets_fy', histField: 'total_current_assets_fy_h', growth: 0.11 },
-    
-    // Total assets
-    { apiField: 'total_assets_fy', histField: 'total_assets_fy_h', growth: 0.09 }
+    // Current Assets
+    { roicField: 'bs_inventories', balanceSheetField: 'total_inventory_fy_h' }, // Inventories
+    { roicField: 'bs_accts_rec_excl_notes_rec', balanceSheetField: 'accounts_receivable_fy_h' }, // Accounts receivable
+    { roicField: 'bs_cash_near_cash_item', balanceSheetField: 'cash_fy_h' }, // Cash and near cash
+    { roicField: 'bs_c_and_ce_and_sti_detailed', balanceSheetField: 'cash_and_short_term_investments_fy_h' }, // Cash & short-term investments
+    { roicField: 'bs_mkt_sec_other_st_invest', balanceSheetField: 'short_term_investments_fy_h' }, // Short-term investments
+    { roicField: 'bs_other_current_assets_detailed', balanceSheetField: 'other_current_assets_fy_h' }, // Other current assets
+    { roicField: 'bs_cur_asset_report', balanceSheetField: 'total_current_assets_fy_h' }, // Total current assets
+
+    // Total Assets
+    { roicField: 'bs_tot_asset', balanceSheetField: 'total_assets_fy_h' }, // Total assets
+
+    // LIABILITIES
+    // Current Liabilities
+    { roicField: 'bs_acct_payable', balanceSheetField: 'accounts_payable_fy_h' }, // Accounts payable
+    { roicField: 'bs_st_borrow', balanceSheetField: 'short_term_debt_fy_h' }, // Short-term borrowings
+    { roicField: 'bs_other_current_liabs_detailed', balanceSheetField: 'other_current_liabilities_fy_h' }, // Other current liabilities
+    { roicField: 'bs_cur_liab', balanceSheetField: 'total_current_liabilities_fy_h' }, // Total current liabilities
+
+    // Non-current Liabilities
+    { roicField: 'bs_lt_borrow', balanceSheetField: 'long_term_debt_fy_h' }, // Long-term borrowings
+    { roicField: 'bs_other_noncurrent_liabs_detailed', balanceSheetField: 'other_noncurrent_liabilities_fy_h' }, // Other non-current liabilities
+    { roicField: 'bs_non_cur_liab', balanceSheetField: 'total_noncurrent_liabilities_fy_h' }, // Total non-current liabilities
+
+    // Total Liabilities
+    { roicField: 'bs_tot_liab', balanceSheetField: 'total_liabilities_fy_h' }, // Total liabilities
+
+    // EQUITY
+    { roicField: 'bs_common_stock', balanceSheetField: 'common_stock_fy_h' }, // Common stock
+    { roicField: 'bs_add_paid_in_cap', balanceSheetField: 'paid_in_capital_fy_h' }, // Additional paid-in capital
+    { roicField: 'bs_pure_retained_earnings', balanceSheetField: 'retained_earnings_fy_h' }, // Retained earnings
+    { roicField: 'bs_minority_noncontrolling_interest', balanceSheetField: 'minority_interest_fy_h' }, // Minority interest
+    { roicField: 'bs_total_equity', balanceSheetField: 'total_equity_fy_h' }, // Total equity
+
+    // Combined fields
+    { roicField: 'bs_sh_cap_and_apic', balanceSheetField: 'total_share_capital_fy_h' }, // Share capital + APIC
   ];
-  
-  // Add banking-specific fields if it's a bank
-  if (isBank) {
-    fieldMappings.push(
-      { apiField: 'total_deposits_fy', histField: 'total_deposits_fy_h', growth: 0.13 },
-      { apiField: 'loans_net_fy', histField: 'loans_net_fy_h', growth: 0.12 },
-      { apiField: 'loans_gross_fy', histField: 'loans_gross_fy_h', growth: 0.12 },
-      { apiField: 'loan_loss_allowances_fy', histField: 'loan_loss_allowances_fy_h', growth: 0.10 }
-    );
-  }
-  
-  // Map each field - prefer historical data if available
-  fieldMappings.forEach(({ apiField, histField, growth }) => {
-    // First, check if historical data already exists
-    const historicalData = fieldMap.get(histField);
-    if (historicalData && Array.isArray(historicalData) && historicalData.length > 0) {
-      // Filter out null values and use the data
-      const cleanData = historicalData.filter((v: any) => v !== null && v !== undefined);
-      if (cleanData.length > 0) {
-        // Extend clean data to match expected years length, filling missing values with the last known value or 0
-        const extendedData = Array.from({ length: years }, (_, i) => {
-          if (i < historicalData.length && historicalData[i] !== null && historicalData[i] !== undefined) {
-            return historicalData[i];
-          } else if (cleanData.length > 0) {
-            // Use the last known value for missing years
-            return cleanData[cleanData.length - 1];
-          } else {
-            return 0;
-          }
-        });
-        balanceSheetData[histField] = extendedData;
-        console.log(`Using existing historical data for ${histField} (${cleanData.length} non-null values, extended to ${years} years)`);
-      } else {
-        // All values are null, use current value fallback
-        const currentValue = fieldMap.get(apiField);
-        if (currentValue && typeof currentValue === 'number') {
-          balanceSheetData[histField] = generateHistoricalArray(currentValue, years, growth);
-          console.log(`Generated from current value for ${histField}`);
-        } else {
-          balanceSheetData[histField] = new Array(years).fill(0);
-          console.log(`No valid data for ${histField}, using zeros`);
-        }
-      }
-    } else {
-      // Fallback to generating from current value
-      const currentValue = fieldMap.get(apiField);
-      if (currentValue && typeof currentValue === 'number') {
-        balanceSheetData[histField] = generateHistoricalArray(currentValue, years, growth);
-        console.log(`Generated historical data for ${apiField} (${currentValue}) -> ${histField}`);
-      } else {
-        // Use zeros if no data available
-        balanceSheetData[histField] = new Array(years).fill(0);
-        console.log(`No data for ${apiField}/${histField}, using zeros`);
-      }
+
+  // Map each field
+  fieldMappings.forEach(({ roicField, balanceSheetField }) => {
+    const rawValues = extractHistoricalArray(roicField);
+    const convertedValues = rawValues.map(value => convertToCrores(value));
+    balanceSheetData[balanceSheetField] = convertedValues;
+
+    if (convertedValues.some(v => v !== null)) {
+      console.log(`Mapped ${roicField} -> ${balanceSheetField}: ${convertedValues.filter(v => v !== null).length} non-null values`);
     }
   });
-  
-  // Handle special fields that might exist in API
-  // Check for CWIP historical data (usually not available in API)
-  if (!fieldMap.get('cwip_fy_h')) {
-    balanceSheetData.cwip_fy_h = new Array(years).fill(0);
-  }
 
-  // Add calculated fields as per specification
-  const longTermInvestmentsTotal = calculateLongTermInvestmentsTotal(fieldMap);
-  if (longTermInvestmentsTotal) {
-    balanceSheetData.long_term_investments_total = longTermInvestmentsTotal;
-  }
+  // Calculate total debt (short-term + long-term)
+  const shortTermDebt = balanceSheetData.short_term_debt_fy_h || [];
+  const longTermDebt = balanceSheetData.long_term_debt_fy_h || [];
+  balanceSheetData.total_debt_fy_h = shortTermDebt.map((st: number | null, i: number) => {
+    const stValue = st || 0;
+    const ltValue = longTermDebt[i] || 0;
+    return stValue + ltValue;
+  });
 
-  const goodwillIntangibles = calculateGoodwillIntangibles(fieldMap);
-  if (goodwillIntangibles) {
-    balanceSheetData.goodwill_intangibles_net_fy_h = goodwillIntangibles;
-  }
-
-  const nonCurrentAssetsTotal = calculateNonCurrentAssetsTotal(fieldMap);
-  if (nonCurrentAssetsTotal) {
-    balanceSheetData.total_non_current_assets_calculated = nonCurrentAssetsTotal;
-  }
-  
-  // Ensure sector information is properly set
-  if (!balanceSheetData.sector) {
-    balanceSheetData.sector = isBank ? 'Private Sector Bank' : 'Technology';
-  }
-  balanceSheetData['sector-i18n-en'] = balanceSheetData['sector-i18n-en'] || balanceSheetData.sector;
-  
-  console.log('Generated balance sheet data:', {
+  console.log('Mapped ROIC balance sheet data:', {
     symbol,
     isBank,
     sector: balanceSheetData.sector,
     reportType: balanceSheetData.report_type,
-    fieldsGenerated: Object.keys(balanceSheetData).filter(k => k.endsWith('_fy_h')),
-    yearsCount: balanceSheetData.years.length
+    fieldsGenerated: Object.keys(balanceSheetData).filter(k => k.endsWith('_fy_h')).length,
+    yearsCount: balanceSheetData.years.length,
+    years: balanceSheetData.years
   });
-  
+
   return balanceSheetData;
 }
 
-// Fetch real API data from RapidAPI InsightSentry
-async function fetchRealApiData(symbol: string): Promise<any> {
-  if (!RAPIDAPI_KEY) {
-    console.error('RAPIDAPI_KEY is not configured');
-    throw new Error('API key not configured');
-  }
-
+// Fetch balance sheet data from ROIC API
+async function fetchRoicBalanceSheetData(symbol: string): Promise<any> {
   try {
-    // Use the full symbol with exchange prefix for the v3 API
-    const fullSymbol = symbol.includes(':') ? symbol : `NSE:${symbol}`;
-    
-    console.log(`Fetching balance sheet data from RapidAPI for symbol: ${fullSymbol}`);
-    
-    // Define the balance sheet fields we need
-    const balanceSheetFields = [
-      // Non-current Assets fields as per specification
-      'ppe_total_net_fy_h',                        // Property, plant & equipment (net)
-      'goodwill_fy_h',                             // Goodwill
-      'intangibles_net_fy_h',                      // Intangibles (net)
-      'long_term_investments_fy_h',                // Long-term investments base
-      'investments_in_unconcsolidate_fy_h',        // Investment in unconsolidated
-      'other_investments_fy_h',                    // Other investments
-      'deferred_tax_assests_fy_h',                 // Deferred tax assets
-      'long_term_other_assets_total_fy_h',         // Other non-current assets
-      'total_noent_assets_P',                      // Total non-current assets (sum of 5 lines)
+    // Clean symbol - remove NSE: prefix if present, then append .NS
+    const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+    const tickerSymbol = cleanSymbol.includes('.NS') ? cleanSymbol : `${cleanSymbol}.NS`;
 
-      // Current Assets - Historical
-      'total_current_assets_fy_h',
-      'total_inventory_fy_h',
-      'total_receivables_net_fy_h',
-      'cash_n_short_term_invest_fy_h',   // Combined cash & short-term investments
-      'cash_n_equivalents_fy_h',         // Cash & equivalents (separate)
-      'short_term_investments_fy_h',      // Short-term investments (separate)
-      'other_current_assets_total_fy_h',  // Other current assets
-      'cash_fy_h',
-      
-      // Other Assets - Historical
-      'total_assets_fy_h',
-      'loans_net_fy_h',
-      'loans_gross_fy_h',
-      'loan_loss_allowances_fy_h',
+    console.log(`Fetching balance sheet data from ROIC API for symbol: ${tickerSymbol}`);
 
-      // Liabilities - Historical
-      'total_liabilities_fy_h',
-      'total_debt_fy_h',
-      'short_term_debt_fy_h',
-      'long_term_debt_fy_h',
-      'total_deposits_fy_h',
-      'total_current_liabilities_fy_h',
-      'deferred_income_current_fy_h',
-      'other_liabilities_total_fy_h',
-
-      // Equity - Historical
-      'total_equity_fy_h',
-      'common_stock_par_fy_h',
-      'retained_earnings_fy_h',
-      'common_equity_total_fy_h',
-
-      // Current values (for fallback)
-      'total_assets_fy',
-      'total_liabilities_fy',
-      'total_equity_fy',
-      'total_debt_fy',
-      'deferred_income_current_fy',
-      'total_inventory_fy',
-      'total_receivables_net_fy',
-      'cash_n_short_term_invest_fy',     // Combined field
-      'cash_n_equivalents_fy',
-      'short_term_investments_fy',
-      'other_current_assets_total_fy',
-      'total_current_assets_fy',
-
-      // Metadata
-      'sector',
-      'industry',
-      'sector-i18n-en',
-      'industry-i18n-en',
-      'report_type'
-    ];
-    
-    // Build query parameters
-    const queryParams = balanceSheetFields.map(field => `fields=${field}`).join('&');
-
-
-    // For now, make unfiltered request to get all fields including historical inventory data
-    // This ensures we get total_inventory_fy_h which is not available in filtered requests
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/v3/symbols/${encodeURIComponent(fullSymbol)}/fundamentals`,
+      `${ROIC_BASE_URL}/fundamental/balance-sheet/${tickerSymbol}?apikey=${ROIC_API_KEY}`,
       {
         method: 'GET',
         headers: {
-          'X-RapidAPI-Host': RAPIDAPI_HOST,
-          'X-RapidAPI-Key': RAPIDAPI_KEY,
           'Accept': 'application/json'
         }
       }
     );
 
     if (!response.ok) {
-      console.error(`API response not OK: ${response.status} ${response.statusText}`);
+      console.error(`ROIC API response not OK: ${response.status} ${response.statusText}`);
       throw new Error(`Failed to fetch data: ${response.status}`);
     }
 
     const responseData = await response.json();
-    console.log(`API response received for ${fullSymbol}`);
-    
-    // Use ApiResponseParser to handle the response
-    const parser = new ApiResponseParser();
-    
-    // Check if response has nested structure with numbered indices
-    if (responseData && responseData.data) {
-      // Check if data is an object with numbered keys (like the quarterly API)
-      const dataKeys = Object.keys(responseData.data);
-      const hasNumberedKeys = dataKeys.length > 0 && dataKeys.every(k => !isNaN(Number(k)));
-      
-      if (hasNumberedKeys) {
-        // Convert numbered object to array for parser
-        const dataArray = dataKeys.sort((a, b) => Number(a) - Number(b)).map(key => responseData.data[key]);
-        console.log(`Converting numbered object to array: ${dataArray.length} items`);
-        
-        // Parse the array using ApiResponseParser
-        const result = parser.parseApiResponse({ data: dataArray, metadata: responseData.metadata });
-        
-        if (result.errors.length > 0) {
-          console.warn('Parser errors:', result.errors);
-        }
-        
-        console.log('Parsed balance sheet fields:',
-          Object.keys(result.data).filter(k => k.includes('_fy')).slice(0, 10)
-        );
+    console.log(`ROIC API response received for ${tickerSymbol}:`, {
+      dataLength: Array.isArray(responseData) ? responseData.length : 'Not an array',
+      firstItemKeys: Array.isArray(responseData) && responseData.length > 0 ? Object.keys(responseData[0]).slice(0, 10) : 'No data'
+    });
 
-        
+    return responseData;
 
-        // Check if the field exists in raw parsed data
-        const rawDataArray = dataKeys.sort((a, b) => Number(a) - Number(b)).map(key => responseData.data[key]);
-        const deferredTaxField = rawDataArray.find(item => item?.id === 'deferred_tax_assests_fy_h');
-        console.log('Raw deferred tax field from API:', deferredTaxField);
-        
-        return result.data;
-      } else if (typeof responseData.data === 'object') {
-        // Direct object format
-        console.log('Direct object format, sample keys:', Object.keys(responseData.data).slice(0, 10));
-        return responseData.data;
-      }
-    }
-    
-    console.log('No valid data structure found');
-    return {};
-    
   } catch (error) {
-    console.error('Error fetching real API data:', error);
-    // Return empty object to trigger fallback mock data
-    return {};
+    console.error('Error fetching ROIC API data:', error);
+    // Return empty array to trigger fallback mock data
+    return [];
   }
 }
 
 // Load data from local JSON file as fallback
 function loadLocalApiData(symbol: string): any[] {
   try {
-    const filePath = path.join(process.cwd(), 'api-response.json');
+    const filePath = path.join(process.cwd(), 'balance-sheet.json');
     if (!fs.existsSync(filePath)) {
-      console.log('Local JSON file not found');
+      console.log('Local balance-sheet.json file not found');
       return [];
     }
-    
+
     const fileContent = fs.readFileSync(filePath, 'utf8');
-    
-    // Parse multiple JSON objects from file
-    const jsonObjects: any[] = [];
-    const lines = fileContent.split('\n');
-    let currentJsonString = '';
-    let braceCount = 0;
-    
-    for (const line of lines) {
-      currentJsonString += line + '\n';
-      
-      // Count braces (simple approach)
-      for (const char of line) {
-        if (char === '{') braceCount++;
-        if (char === '}') braceCount--;
-      }
-      
-      // Complete JSON object found
-      if (braceCount === 0 && currentJsonString.trim()) {
-        try {
-          const jsonObj = JSON.parse(currentJsonString);
-          jsonObjects.push(jsonObj);
-          currentJsonString = '';
-        } catch (e) {
-          // Continue if parse fails
-        }
+    const balanceSheetData = JSON.parse(fileContent);
+
+    if (Array.isArray(balanceSheetData)) {
+      // Find data matching the symbol
+      const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+      const symbolData = balanceSheetData.filter(item =>
+        item.ticker && item.ticker.includes(cleanSymbol.toUpperCase())
+      );
+
+      if (symbolData.length > 0) {
+        console.log(`Found local balance sheet data for ${symbol}: ${symbolData.length} entries`);
+        return symbolData;
+      } else {
+        console.log(`Using all local balance sheet data as fallback: ${balanceSheetData.length} entries`);
+        return balanceSheetData;
       }
     }
-    
-    // Find matching data for symbol
-    const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
-    
-    for (const obj of jsonObjects) {
-      if (obj.code) {
-        const objSymbol = obj.code.includes(':') ? obj.code.split(':')[1] : obj.code;
-        if (objSymbol.toUpperCase() === cleanSymbol.toUpperCase()) {
-          console.log(`Found local data for ${symbol}`);
-          return obj.data || [];
-        }
-      }
-    }
-    
-    // Return first available data as fallback
-    if (jsonObjects.length > 0 && jsonObjects[0].data) {
-      console.log(`Using fallback local data from ${jsonObjects[0].code}`);
-      return jsonObjects[0].data;
-    }
-    
+
     return [];
   } catch (error) {
-    console.error('Error loading local data:', error);
+    console.error('Error loading local balance sheet data:', error);
     return [];
   }
 }
@@ -553,7 +298,7 @@ export async function GET(
 ) {
   try {
     const { symbol } = await params;
-    
+
     if (!symbol) {
       return NextResponse.json(
         { error: 'Symbol parameter is required' },
@@ -563,25 +308,30 @@ export async function GET(
 
     console.log(`Fetching balance sheet data for symbol: ${symbol}`);
 
-    // Try to fetch real API data from RapidAPI
-    let apiData = await fetchRealApiData(symbol.toUpperCase());
-    let isFromLocalFile = false;
-    
-    // If API fails, try local JSON file
-    if (!apiData || Object.keys(apiData).length === 0) {
-      console.log('API failed, trying local JSON file');
-      apiData = loadLocalApiData(symbol.toUpperCase());
-      isFromLocalFile = true;
-      
-      if (!apiData || (Array.isArray(apiData) && apiData.length === 0)) {
+    // Try to fetch data from ROIC API first
+    let roicData = await fetchRoicBalanceSheetData(symbol.toUpperCase());
+
+    // If ROIC API fails, try local JSON file
+    if (!roicData || (Array.isArray(roicData) && roicData.length === 0)) {
+      console.log('ROIC API failed, trying local JSON file');
+      roicData = loadLocalApiData(symbol.toUpperCase());
+
+      if (!roicData || (Array.isArray(roicData) && roicData.length === 0)) {
         console.log('No data available, using mock fallback');
         const mockData = generateMockBalanceSheetData(symbol.toUpperCase());
         return NextResponse.json(mockData);
       }
     }
 
-    // Map the API data to balance sheet format
-    const balanceSheetData = mapApiToBalanceSheetData(apiData, symbol.toUpperCase(), isFromLocalFile);
+    // Map the ROIC API data to balance sheet format
+    const balanceSheetData = mapRoicToBalanceSheetData(roicData, symbol.toUpperCase());
+
+    // If mapping failed, use mock data
+    if (!balanceSheetData) {
+      console.log('Data mapping failed, using mock fallback');
+      const mockData = generateMockBalanceSheetData(symbol.toUpperCase());
+      return NextResponse.json(mockData);
+    }
 
     console.log('Processed balance sheet data for', symbol, ':', {
       companyName: balanceSheetData.company_name,
@@ -598,7 +348,7 @@ export async function GET(
   } catch (error) {
     console.error('Error in balance sheet API:', error);
     return NextResponse.json(
-      { 
+      {
         error: 'Internal server error',
         details: error instanceof Error ? error.message : 'Unknown error'
       },

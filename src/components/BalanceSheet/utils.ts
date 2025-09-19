@@ -160,14 +160,14 @@ export function formatNumber(value: number | null): FormattedValue {
 }
 
 /**
- * Convert API values to crores (divide by 10,000,000)
+ * Convert API values to crores - ROIC API already returns values in crores
  */
 function convertToCrores(value: number | null): number | null {
   if (value === null || value === undefined || isNaN(value)) {
     return null;
   }
-  // API values are typically in rupees, convert to crores
-  return value / 10000000;
+  // ROIC API values are already converted to crores in the API route mapping function
+  return value;
 }
 
 /**
@@ -233,6 +233,8 @@ function processBalanceSheetStructure(configs: any[], dataMap: Map<string, (numb
     } else if (config.key) {
       // Get values directly from dataMap
       values = dataMap.get(config.key) || null;
+      console.log(`Getting values for ${config.label} (key: ${config.key}):`,
+        values ? `${values.length} values, first 3: [${values.slice(0, 3).join(', ')}]` : 'null');
     }
 
     // Apply custom formatting if provided
@@ -253,6 +255,11 @@ function processBalanceSheetStructure(configs: any[], dataMap: Map<string, (numb
           return value?.toString() || 'N/A';
       }
     });
+
+    // Debug: Log formatted values for first few metrics
+    if (config.label === 'Property, plant & equipment (net)' || config.label === 'Inventories') {
+      console.log(`Formatted values for ${config.label}:`, formattedValues.slice(0, 3));
+    }
 
     rows.push({
       label: config.label,
@@ -306,11 +313,22 @@ export function processBalanceSheetData(
   // Get the appropriate structure based on company type
   const structure = getBalanceSheetMetricConfig(companyType);
 
-  // Debug: Check if inventory field exists in dataMap
+  // Debug: Check if key fields exist in dataMap
+  console.log('Debug dataMap contents:');
+  console.log('Data map size:', dataMap.size);
+  console.log('Data map keys:', Array.from(dataMap.keys()).slice(0, 10));
   console.log('Data map contains total_inventory_fy_h:', dataMap.has('total_inventory_fy_h'));
+  console.log('Data map contains ppe_total_net_fy_h:', dataMap.has('ppe_total_net_fy_h'));
+  console.log('Data map contains total_assets_fy_h:', dataMap.has('total_assets_fy_h'));
+
   if (dataMap.has('total_inventory_fy_h')) {
     const inventoryData = dataMap.get('total_inventory_fy_h');
     console.log('Inventory data sample:', inventoryData?.slice(0, 3));
+  }
+
+  if (dataMap.has('ppe_total_net_fy_h')) {
+    const ppeData = dataMap.get('ppe_total_net_fy_h');
+    console.log('PPE data sample:', ppeData?.slice(0, 3));
   }
 
   // Process the structure with the data map

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,9 +19,15 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Ensure component is mounted on client side to prevent hydration issues
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Debounced search function
   const performSearch = async (query: string) => {
@@ -65,11 +72,6 @@ export default function HomePage() {
     setShowResults(false);
 
     try {
-      // For testing, let's try with a known working symbol first
-      if (result.name.toLowerCase().includes('jindal')) {
-        router.push('/stock/NSE%3AJINDALSTEL');
-        return;
-      }
 
       // First try to search by company name to find the correct symbol in our stocks API
       const response = await fetch('/api/stocks', {
@@ -185,10 +187,14 @@ export default function HomePage() {
       <header className="fixed top-0 left-0 right-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-700/50">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-teal-400 to-cyan-400 rounded-lg flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-900" fill="currentColor">
-                <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <Image
+                src="/logo.png"
+                alt="Bull AI Logo"
+                width={32}
+                height={32}
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">
@@ -220,33 +226,45 @@ export default function HomePage() {
 
         {/* Logo and Title */}
         <div className="mb-8">
-          <h1 className="text-5xl lg:text-6xl font-bold mb-4">
-            <span className="text-white">Bull</span><span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-300">AI</span>
-          </h1>
+          <div className="flex items-center justify-center mb-6">
+            <div className="w-16 h-16 rounded-xl overflow-hidden mr-4">
+              <Image
+                src="/logo.png"
+                alt="Bull AI Logo"
+                width={64}
+                height={64}
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <h1 className="text-5xl lg:text-6xl font-bold">
+              <span className="text-white">Bull</span><span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-300">AI</span>
+            </h1>
+          </div>
           <p className="text-slate-300 text-lg max-w-2xl mx-auto">
             The 1st AI assistant for the Indian equities market
           </p>
         </div>
 
         {/* Search Container - Outside of box */}
-        <div ref={searchContainerRef} className="relative mb-8 max-w-3xl mx-auto">
-          <form onSubmit={handleSubmit} className="relative">
-            <div className="relative">
-              <SearchIcon className="absolute left-6 top-1/2 transform -translate-y-1/2 h-6 w-6 text-slate-400" />
-              <Input
-                ref={inputRef}
-                type="text"
-                placeholder="Search for a company"
-                value={searchTerm}
-                onChange={handleSearchChange}
-                onFocus={() => searchTerm && setShowResults(true)}
-                className="w-full pl-16 pr-20 py-6 text-xl bg-slate-900/70 border-2 border-slate-600 rounded-2xl text-white placeholder:text-slate-400 focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all shadow-2xl backdrop-blur-sm"
-              />
-              {loading && (
-                <Loader2 className="absolute right-6 top-1/2 transform -translate-y-1/2 h-6 w-6 text-teal-400 animate-spin" />
-              )}
-            </div>
-          </form>
+        {mounted ? (
+          <div ref={searchContainerRef} className="relative mb-8 max-w-3xl mx-auto">
+            <form onSubmit={handleSubmit} className="relative">
+              <div className="relative">
+                <SearchIcon className="absolute left-6 top-1/2 transform -translate-y-1/2 h-6 w-6 text-slate-400" />
+                <Input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Search for a company"
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                  onFocus={() => searchTerm && setShowResults(true)}
+                  className="w-full pl-16 pr-20 py-6 text-xl bg-slate-900/70 border-2 border-slate-600 rounded-2xl text-white placeholder:text-slate-400 focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all shadow-2xl backdrop-blur-sm"
+                />
+                {loading && (
+                  <Loader2 className="absolute right-6 top-1/2 transform -translate-y-1/2 h-6 w-6 text-teal-400 animate-spin" />
+                )}
+              </div>
+            </form>
 
           {/* Search Results Dropdown */}
           {showResults && searchResults.length > 0 && !navigating && (
@@ -285,26 +303,47 @@ export default function HomePage() {
               </div>
             </div>
           )}
-        </div>
 
-        {/* Popular Companies */}
-        <div className="mb-8">
-          <p className="text-slate-400 mb-4 text-sm">Or search popular stocks:</p>
-          <div className="flex flex-wrap justify-center gap-3">
-            {popularStocks.slice(0, 6).map((company) => (
-              <button
-                key={company}
-                onClick={() => {
-                  setSearchTerm(company);
-                  performSearch(company);
-                }}
-                className="px-4 py-2 text-sm bg-slate-700/50 text-slate-300 border border-slate-600 rounded-lg hover:bg-slate-600/50 hover:text-white hover:border-teal-400 transition-all"
-              >
-                {company}
-              </button>
-            ))}
+            {/* Popular Companies */}
+            <div className="mb-8">
+              <p className="text-slate-400 mb-4 text-sm">Or search popular stocks:</p>
+              <div className="flex flex-wrap justify-center gap-3">
+                {popularStocks.slice(0, 6).map((company) => (
+                  <button
+                    key={company}
+                    onClick={() => {
+                      setSearchTerm(company);
+                      performSearch(company);
+                    }}
+                    className="px-4 py-2 text-sm bg-slate-700/50 text-slate-300 border border-slate-600 rounded-lg hover:bg-slate-600/50 hover:text-white hover:border-teal-400 transition-all"
+                  >
+                    {company}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          // Placeholder for server-side rendering
+          <div className="relative mb-8 max-w-3xl mx-auto">
+            <div className="w-full py-6 text-xl bg-slate-900/70 border-2 border-slate-600 rounded-2xl text-slate-400 pl-16 pr-20">
+              Loading search...
+            </div>
+            <div className="mb-8 mt-8">
+              <p className="text-slate-400 mb-4 text-sm">Or search popular stocks:</p>
+              <div className="flex flex-wrap justify-center gap-3">
+                {popularStocks.slice(0, 6).map((company) => (
+                  <div
+                    key={company}
+                    className="px-4 py-2 text-sm bg-slate-700/50 text-slate-300 border border-slate-600 rounded-lg"
+                  >
+                    {company}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Additional Features or Description */}
         <div className="text-center space-y-2 text-slate-400">

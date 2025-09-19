@@ -339,4 +339,3 @@ export async function searchStocksByName(query: string, limit: number = 10): Pro
         throw error;
     }
 }
-''

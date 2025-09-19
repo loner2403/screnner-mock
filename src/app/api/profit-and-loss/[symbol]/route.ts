@@ -1,181 +1,324 @@
-
 import { NextRequest, NextResponse } from 'next/server';
-import { ApiResponseParser } from '@/lib/api-parser';
 
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const RAPIDAPI_HOST = 'insightsentry.p.rapidapi.com';
+interface IncomeStatementData {
+    ticker: string;
+    date: string;
+    period: string;
+    period_label: string;
+    fiscal_year: string;
+    is_sales_revenue_turnover: number;
+    is_sales_and_services_revenues: number;
+    is_cogs: number;
+    is_cog_and_services_sold: number;
+    is_gross_profit: number;
+    is_operating_expn: number;
+    is_sg_and_a_expense: number;
+    is_other_operating_expenses: number;
+    is_oper_income: number;
+    is_nonop_income_loss: number;
+    is_net_interest_expense: number;
+    is_int_expense: number;
+    is_int_income: number;
+    is_other_nonop_income_loss: number;
+    is_pretax_income: number;
+    is_inc_tax_exp: number;
+    is_inc_bef_xo_item: number;
+    is_xo_gl_net_of_tax?: number;
+    is_extraord_items_and_acctg_chng?: number;
+    is_ni_including_minority_int_ratio: number;
+    is_min_noncontrol_interest_credits?: number;
+    is_net_income: number;
+    is_earn_for_common: number;
+    is_avg_num_sh_for_eps: number;
+    eps: number;
+    eps_cont_ops: number;
+    is_sh_for_diluted_eps: number;
+    diluted_eps: number;
+    dil_eps_cont_ops: number;
+    ebitda: number;
+    ebitda_margin: number;
+    ebita: number;
+    ebit: number;
+    gross_margin: number;
+    oper_margin: number;
+    profit_margin: number;
+    div_per_shr: number;
+    is_depr_exp: number;
+}
 
-// All profit & loss fields we need from the API
-const PROFIT_AND_LOSS_FIELDS = [
-  // Common P&L fields
-  'revenue_fy_h',
-  'total_revenue_fy_h',
-  'cost_of_goods_fy_h',
-  'gross_profit_fy_h',
-  'gross_margin_fy_h',
-  'operating_expenses_fy_h',
-  'oper_income_fy_h',
-  'operating_margin_fy_h',
-  'other_income_fy_h',
-  'interest_expense_fy_h',
-  'depreciation_fy_h',
-  'depreciation_depletion_fy_h',
-  'pretax_income_fy_h',
-  'income_tax_fy_h',
-  'net_income_fy_h',
-  'earnings_per_share_basic_fy_h',
-  'dividend_payout_ratio_fy_h',
-  
-  // Banking-specific P&L fields
-  'interest_income_fy_h',
-  'minority_interest_exp_fy_h',
-  'other_oper_expense_total_fy_h',
-  'interest_expense_on_debt_fy_h',
-  'interest_income_net_fy_h',
-  'net_interest_margin_fy_h',
-  'non_interest_income_fy_h',
-  
-  // Metadata fields
-  'sector',
-  'sector-i18n-en',
-  'industry',
-  'industry-i18n-en',
-  'company_type',
-  'report_type'
-];
+interface ProfitLossTableRow {
+    year: string;
+    salesRevenue: number;
+    cogs: number;
+    grossProfit: number;
+    operatingExpenses: number;
+    ebitda: number;
+    ebitdaPercent: number;
+    depreciation: number;
+    ebit: number;
+    interest: number;
+    otherIncome: number;
+    pbt: number;
+    tax: number;
+    pat: number;
+    eps: number;
+}
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ symbol: string }> }
-) {
-  const { symbol } = await params;
+interface ProfitLossResponse {
+    symbol: string;
+    companyName: string;
+    data: ProfitLossTableRow[];
+    metadata: {
+        last_update: string;
+        currency: string;
+        unit: string;
+    };
+}
 
-  if (!symbol) {
-    return NextResponse.json({ error: 'Symbol is required' }, { status: 400 });
-  }
+// Cache for storing P&L data
+const profitLossCache = new Map<string, { data: ProfitLossResponse; timestamp: number; ttl: number }>();
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
-  console.log(`Fetching profit & loss data for symbol: ${symbol}`);
+const getCacheKey = (symbol: string): string => {
+    return `profit-loss:${symbol}`;
+};
 
-  try {
-    if (!RAPIDAPI_KEY) {
-      throw new Error('RAPIDAPI_KEY is not configured');
+const isCacheValid = (cacheEntry: { timestamp: number; ttl: number }): boolean => {
+    return Date.now() - cacheEntry.timestamp < cacheEntry.ttl;
+};
+
+const ROIC_API_KEY = process.env.ROIC_API_KEY;
+const ROIC_BASE_URL = process.env.ROIC_BASE_URL;
+
+// Convert number to crores format
+const toCrores = (value: number): number => {
+    return Math.round((value / 10000000) * 100) / 100; // Convert to crores and round to 2 decimal places
+};
+
+// Calculate percentage
+const calculatePercentage = (numerator: number, denominator: number): number => {
+    if (denominator === 0) return 0;
+    return Math.round((numerator / denominator) * 100);
+};
+
+// Fetch income statement data from ROIC API
+const fetchIncomeStatementData = async (symbol: string): Promise<IncomeStatementData[]> => {
+    // Convert symbol format: NSE:SYMBOL -> SYMBOL.NS or keep SYMBOL.NS as is
+    let nseSymbol = symbol;
+    if (symbol.startsWith('NSE:')) {
+        nseSymbol = symbol.replace('NSE:', '') + '.NS';
+    } else if (!symbol.includes('.NS')) {
+        nseSymbol = `${symbol}.NS`;
     }
 
-    // Build the fields query parameter
-    const fieldsParam = PROFIT_AND_LOSS_FIELDS.map(field => `fields=${field}`).join('&');
-    const url = `https://${RAPIDAPI_HOST}/v3/symbols/${symbol}/fundamentals?${fieldsParam}`;
-    
-    console.log(`Making API request to: ${url}`);
+    console.log(`Fetching income statement data for ${nseSymbol} from ROIC API`);
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-RapidAPI-Host': RAPIDAPI_HOST,
-        'X-RapidAPI-Key': RAPIDAPI_KEY,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
-    }
-
-    const rawData = await response.json();
-    console.log('API Response Status:', response.status);
-    console.log('API Success - received data keys:', Object.keys(rawData));
-
-    // Check if the response has the expected structure
-    let dataToProcess = rawData;
-    if (rawData.data) {
-      console.log('Using rawData.data for processing');
-      dataToProcess = rawData.data;
-    }
-
-    // Parse the API response - try direct processing first
-    let parsedData: any = {};
-    
-    if (Array.isArray(dataToProcess)) {
-      // Convert array format to object format
-      console.log('Processing array format data with', dataToProcess.length, 'items');
-      for (const item of dataToProcess) {
-        if (item.id && item.value !== undefined) {
-          parsedData[item.id] = item.value;
+    const response = await fetch(
+        `${ROIC_BASE_URL}/v2/fundamental/income-statement/${encodeURIComponent(nseSymbol)}?apikey=${ROIC_API_KEY}`,
+        {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
         }
-      }
-    } else if (typeof dataToProcess === 'object') {
-      // Direct object format
-      console.log('Processing object format data');
-      parsedData = { ...dataToProcess };
-    }
-
-    // If still no useful data, try the parser as fallback
-    if (Object.keys(parsedData).length === 0) {
-      console.log('No data from direct processing, trying parser...');
-      const parser = new ApiResponseParser();
-      parsedData = parser.parseApiResponse(rawData);
-    }
-
-    console.log('Processed profit & loss data keys:', Object.keys(parsedData).slice(0, 20));
-    console.log('Sample of parsed data:', Object.fromEntries(Object.entries(parsedData).slice(0, 5)));
-
-    // Check if we got useful data
-    const hasUsefulData = Object.keys(parsedData).some(key => 
-      key.includes('_fy_h') || key.includes('sector') || key.includes('revenue') || key.includes('net_income')
     );
 
-    if (!hasUsefulData) {
-      console.log('No useful P&L fields found in parsed data, falling back...');
-      throw new Error('No useful profit & loss data fields found');
+    if (!response.ok) {
+        throw new Error(`ROIC API request failed: ${response.status} ${response.statusText}`);
     }
 
-    // Convert to the array format expected by the frontend
-    const responseData = Object.entries(parsedData).map(([key, value]) => ({
-      id: key,
-      value: value
-    }));
+    const data: IncomeStatementData[] = await response.json();
 
-    return NextResponse.json(responseData);
+    if (!Array.isArray(data) || data.length === 0) {
+        throw new Error('No income statement data found');
+    }
 
-  } catch (error) {
-    console.error('Error fetching profit & loss data from API:', error);
-    console.log('Falling back to same data generation as balance sheet API...');
-    
-    // Skip the parser fallback and go directly to minimal data
-    console.log('Skipping parser fallback, using minimal data directly...');
+    console.log(`Found ${data.length} years of income statement data`);
 
-    // Final fallback: return data from api-response.json based on symbol
-    if (symbol.includes('HDFC')) {
-        // HDFC Bank data - using the first set from api-response.json
-        const minimalData = [
-          { id: 'sector-i18n-en', value: 'Regional Banks' },
-          { id: 'sector', value: 'Regional Banks' },
-          { id: 'report_type', value: 'banking' },
-          { id: 'total_revenue_fy_h', value: [4746688300000, 4008377800000, 2051185400000, 1660782400000, 1573240231000, 1477444608000, 1241168292000, 1015026759000, 861418544000, 743907029000, 601454190000, 508426398000, 429601616000, 331464269000, 245981223000, 202662036000, 197743838000, 124143100000, 82185000000, 57203100000] },
-          { id: 'net_income_fy_h', value: [707922500000, 584301200000, 328715400000, 274036500000, 258251900000, 214900600000, 186452800000, 151014600000, 126652300000, 107772100000, 90876500000, 77020700000, 64976000000, 51249600000, 39419700000, 31116400000, 30165900000, 18912300000, 11901200000, 8329800000] },
-          { id: 'return_on_equity_fy_h', value: [14.57, 14.23, 13.89, 14.56, 15.23, 16.12, 17.89, 18.45, 19.23, 20.45, 21.23, 22.34, 23.45, 24.56, 25.67, 24.78, 23.89, 22.12, 21.45, 20.78] }
-        ];
-        return NextResponse.json(minimalData);
-      } else {
-        // Reliance or other companies - default data
-        const minimalData = [
-          { id: 'sector-i18n-en', value: 'Energy Minerals' },
-          { id: 'sector', value: 'Energy Minerals' },
-          { id: 'report_type', value: 'non-banking' },
-          { id: 'total_revenue_fy_h', value: [1683024000000, 1577735000000, 1180571000000, 1015195000000, 900845000000, 794471000000, 658691000000, 553152000000] },
-          { id: 'cost_of_goods_fy_h', value: [1200000000000, 1100000000000, 900000000000, 800000000000, 700000000000, 600000000000, 500000000000, 450000000000] },
-          { id: 'gross_profit_fy_h', value: [483024000000, 477735000000, 280571000000, 215195000000, 200845000000, 194471000000, 158691000000, 103152000000] },
-          { id: 'operating_expenses_fy_h', value: [350000000000, 320000000000, 200000000000, 150000000000, 140000000000, 130000000000, 120000000000, 80000000000] },
-          { id: 'ebitda_fy_h', value: [133024000000, 157735000000, 80571000000, 65195000000, 60845000000, 64471000000, 38691000000, 23152000000] },
-          { id: 'ebitda_margin_fy_h', value: [7.9, 10.0, 6.8, 6.4, 6.8, 8.1, 5.9, 4.2] },
-          { id: 'depreciation_fy_h', value: [45000000000, 42000000000, 35000000000, 30000000000, 28000000000, 25000000000, 20000000000, 15000000000] },
-          { id: 'ebit_fy_h', value: [88024000000, 115735000000, 45571000000, 35195000000, 32845000000, 39471000000, 18691000000, 8152000000] },
-          { id: 'non_oper_interest_exp_fy_h', value: [15000000000, 12000000000, 8000000000, 6000000000, 5000000000, 4000000000, 3000000000, 2000000000] },
-          { id: 'other_income_fy_h', value: [25000000000, 20000000000, 15000000000, 12000000000, 10000000000, 8000000000, 6000000000, 4000000000] },
-          { id: 'pretax_income_fy_h', value: [98024000000, 123735000000, 52571000000, 41195000000, 37845000000, 43471000000, 21691000000, 10152000000] },
-          { id: 'income_tax_fy_h', value: [25000000000, 30000000000, 13000000000, 10000000000, 9000000000, 11000000000, 5000000000, 2500000000] },
-          { id: 'net_income_fy_h', value: [73024000000, 93735000000, 39571000000, 31195000000, 28845000000, 32471000000, 16691000000, 7652000000] },
-          { id: 'earnings_per_share_basic_fy_h', value: [115.2, 148.1, 62.5, 49.3, 45.6, 51.3, 26.4, 12.1] }
-        ];
-        return NextResponse.json(minimalData);
-      }
-  }
+    // Sort by fiscal year in descending order (most recent first)
+    return data.sort((a, b) => parseInt(b.fiscal_year) - parseInt(a.fiscal_year));
+};
+
+// Transform income statement data to P&L table format
+const transformToProfitLossTable = (incomeData: IncomeStatementData[]): ProfitLossTableRow[] => {
+    return incomeData.map(item => {
+        const salesRevenue = toCrores(item.is_sales_revenue_turnover || item.is_sales_and_services_revenues);
+        const cogs = toCrores(item.is_cogs || item.is_cog_and_services_sold);
+        const grossProfit = toCrores(item.is_gross_profit);
+        const operatingExpenses = toCrores(item.is_operating_expn);
+        const ebitda = toCrores(item.ebitda);
+        const ebitdaPercent = Math.round(item.ebitda_margin * 100) / 100; // Round to 2 decimal places
+        const depreciation = toCrores(item.is_depr_exp);
+        const ebit = toCrores(item.ebita);
+        const interest = toCrores(item.is_net_interest_expense || item.is_int_expense);
+        const otherIncome = toCrores(Math.abs(item.is_other_nonop_income_loss || 0));
+        const pbt = toCrores(item.is_pretax_income); // Profit Before Tax
+        const tax = toCrores(item.is_inc_tax_exp);
+        const pat = toCrores(item.is_net_income); // Profit After Tax
+        const eps = Math.round(item.eps * 100) / 100; // Round to 2 decimal places
+
+        return {
+            year: item.period_label,
+            salesRevenue,
+            cogs,
+            grossProfit,
+            operatingExpenses,
+            ebitda,
+            ebitdaPercent,
+            depreciation,
+            ebit,
+            interest,
+            otherIncome,
+            pbt,
+            tax,
+            pat,
+            eps
+        };
+    });
+};
+
+// Generate mock data as fallback
+const generateMockProfitLossData = (symbol: string): ProfitLossResponse => {
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 13 }, (_, i) => currentYear - i);
+
+    const data: ProfitLossTableRow[] = years.map((year, index) => {
+        // Mock data with some realistic patterns
+        const salesRevenue = 2000 + (index * 50) + Math.random() * 200;
+        const cogs = salesRevenue * (0.65 + Math.random() * 0.1); // 65-75% of sales
+        const grossProfit = salesRevenue - cogs;
+        const operatingExpenses = salesRevenue * (0.15 + Math.random() * 0.1); // 15-25% of sales
+        const ebitda = grossProfit - operatingExpenses;
+        const ebitdaPercent = Math.round((ebitda / salesRevenue) * 100 * 100) / 100;
+        const depreciation = Math.random() * 40;
+        const ebit = ebitda - depreciation;
+        const interest = Math.random() * 60;
+        const otherIncome = Math.random() * 50;
+        const pbt = ebit + otherIncome - interest;
+        const tax = pbt * (0.20 + Math.random() * 0.10); // 20-30% tax rate
+        const pat = pbt - tax;
+        const eps = pat / 100; // Assuming 100Cr shares
+
+        return {
+            year: year.toString(),
+            salesRevenue: Math.round(salesRevenue),
+            cogs: Math.round(cogs),
+            grossProfit: Math.round(grossProfit),
+            operatingExpenses: Math.round(operatingExpenses),
+            ebitda: Math.round(ebitda),
+            ebitdaPercent,
+            depreciation: Math.round(depreciation),
+            ebit: Math.round(ebit),
+            interest: Math.round(interest),
+            otherIncome: Math.round(otherIncome),
+            pbt: Math.round(pbt),
+            tax: Math.round(tax),
+            pat: Math.round(pat),
+            eps: Math.round(eps * 100) / 100
+        };
+    });
+
+    return {
+        symbol: symbol.includes('.NS') ? symbol : `${symbol}.NS`,
+        companyName: symbol.replace('.NS', ''),
+        data,
+        metadata: {
+            last_update: new Date().toISOString(),
+            currency: 'INR',
+            unit: 'Crores'
+        }
+    };
+};
+
+// Main function to fetch profit & loss data with fallback
+const fetchProfitLossData = async (symbol: string): Promise<ProfitLossResponse> => {
+    try {
+        console.log(`Attempting to fetch profit & loss data for ${symbol}`);
+
+        const incomeData = await fetchIncomeStatementData(symbol);
+        const profitLossData = transformToProfitLossTable(incomeData);
+
+        if (profitLossData.length === 0) {
+            console.log('No profit & loss data generated, falling back to mock data');
+            return generateMockProfitLossData(symbol);
+        }
+
+        return {
+            symbol: symbol.includes('.NS') ? symbol : `${symbol}.NS`,
+            companyName: symbol.replace('.NS', ''),
+            data: profitLossData,
+            metadata: {
+                last_update: new Date().toISOString(),
+                currency: 'INR',
+                unit: 'Crores'
+            }
+        };
+
+    } catch (error) {
+        console.error('Error fetching profit & loss data from API:', error);
+        console.log('Falling back to mock data');
+        return generateMockProfitLossData(symbol);
+    }
+};
+
+export async function GET(
+    request: NextRequest,
+    context: { params: Promise<{ symbol: string }> }
+) {
+    try {
+        const { symbol } = await context.params;
+
+        if (!symbol) {
+            return NextResponse.json(
+                { error: 'Symbol parameter is required' },
+                { status: 400 }
+            );
+        }
+
+        // Check cache first
+        const cacheKey = getCacheKey(symbol);
+        const cachedData = profitLossCache.get(cacheKey);
+
+        if (cachedData && isCacheValid(cachedData)) {
+            console.log(`Cache hit for Profit & Loss data ${symbol}`);
+            return NextResponse.json(cachedData.data);
+        }
+
+        console.log(`Fetching fresh Profit & Loss data for ${symbol}`);
+
+        // Fetch fresh data
+        const profitLossData = await fetchProfitLossData(symbol);
+
+        // Cache the result
+        profitLossCache.set(cacheKey, {
+            data: profitLossData,
+            timestamp: Date.now(),
+            ttl: CACHE_TTL
+        });
+
+        // Clean up old cache entries
+        if (profitLossCache.size > 50) {
+            for (const [key, entry] of profitLossCache.entries()) {
+                if (!isCacheValid(entry)) {
+                    profitLossCache.delete(key);
+                }
+            }
+        }
+
+        console.log(`Profit & Loss data generated: ${profitLossData.data.length} years`);
+
+        return NextResponse.json(profitLossData);
+
+    } catch (error) {
+        console.error('Error in Profit & Loss API:', error);
+
+        return NextResponse.json(
+            {
+                error: 'Failed to fetch Profit & Loss data',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            },
+            { status: 500 }
+        );
+    }
 }

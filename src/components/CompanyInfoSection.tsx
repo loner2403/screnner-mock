@@ -123,7 +123,7 @@ const CompanyInfoSection: React.FC<CompanyInfoSectionProps> = ({
                 className="flex items-center gap-1 hover:underline"
               >
                 <Globe className="h-3 w-3" />
-                hul.co.in
+                {new URL(website).hostname}
               </a>
             )}
             {bseCode && (
@@ -135,7 +135,7 @@ const CompanyInfoSection: React.FC<CompanyInfoSectionProps> = ({
             {nseCode && (
               <span className="flex items-center gap-1">
                 <TrendingUp className="h-3 w-3" />
-                NSE: HINDUNILVR
+                NSE: {nseCode}
               </span>
             )}
           </div>
@@ -244,8 +244,7 @@ const CompanyInfoSection: React.FC<CompanyInfoSectionProps> = ({
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-3">ABOUT</h3>
             <p className="text-gray-700 leading-relaxed text-sm">
-              Hindustan Unilever is in the FMCG business comprising primarily of Home Care, Beauty &
-              Personal Care and Foods & Refreshment segments.
+              {description || `${companyName} is a leading company in the ${sector || 'market'}.`}
             </p>
           </div>
         </div>

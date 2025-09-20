@@ -1,0 +1,58 @@
+# CodeRabbit configuration for screnner-mock project
+# https://docs.coderabbit.ai/guides/review-instructions
+
+# Language and framework settings
+language: typescript
+framework: nextjs
+
+# Review focus areas
+reviews:
+  # High priority items for AI review
+  high_level_summary: true
+  path_based_instructions:
+    - path: "src/app/**"
+      instructions: |
+        - Focus on Next.js App Router best practices
+        - Check for proper error boundaries and loading states
+        - Verify SEO and performance optimizations
+    - path: "src/components/**"
+      instructions: |
+        - Ensure component reusability and proper TypeScript typing
+        - Check for accessibility compliance
+        - Verify proper prop validation
+    - path: "src/lib/**"
+      instructions: |
+        - Focus on business logic correctness
+        - Check for proper error handling
+        - Verify database queries and data validation
+    - path: "prisma/**"
+      instructions: |
+        - Review schema changes for breaking changes
+        - Check for proper indexing and relationships
+        - Verify migration safety
+
+# Security and performance checks
+security:
+  - Check for SQL injection vulnerabilities
+  - Verify environment variable usage
+  - Review authentication and authorization
+
+performance:
+  - Check for unnecessary re-renders
+  - Review database query efficiency
+  - Verify proper caching strategies
+
+# Code quality standards
+quality:
+  - Enforce consistent TypeScript patterns
+  - Check for proper error boundaries
+  - Verify test coverage for critical paths
+  - Review component architecture
+
+# Ignore patterns
+ignore:
+  - "*.generated.*"
+  - "dist/**"
+  - "build/**"
+  - "node_modules/**"
+  - ".next/**"

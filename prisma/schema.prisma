@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DIRECT_URL")
+}
+
+model Company {
+  id        String             @id
+  symbol    String             @unique
+  ticker    String?            @unique
+  name      String
+  sector    String?
+  industry  String?
+  marketCap Float?
+  exchange  String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  balanceSheets BalanceSheet[]
+
+  // Indexes for performance
+  @@index([symbol])
+  @@index([ticker])
+  @@index([marketCap])
+  @@index([sector])
+  @@map("companies")
+}
+
+model BalanceSheet {
+  id                  String   @id
+  companyId           String
+  ticker              String
+  date                String
+  year                Int
+  quarter             Int?
+  fiscalYear          String?
+  period              String?
+  periodLabel         String?
+
+  // ASSETS (All values in crores)
+  // Current Assets
+  cashAndCashEquivalents    Float?
+  cashNearCashItem         Float?
+  marketableSecurities     Float?
+  accountsReceivable       Float?
+  otherCurrentReceivable   Float?
+  inventory                Float?
+  inventoryRawMaterials    Float?
+  inventoryInProgress      Float?
+  inventoryFinishedGoods   Float?
+  otherInventory           Float?
+  otherCurrentAssets       Float?
+  currentAssets            Float?
+
+  // Non-Current Assets
+  netFixedAssets           Float?
+  grossFixedAssets         Float?
+  accumulatedDepreciation  Float?
+  otherNonCurrentAssets    Float?
+  disclosedIntangibles     Float?
+  goodwill                 Float?
+  otherIntangibleAssets    Float?
+  otherNonCurrentAssetsDetailed Float?
+  totalNonCurrentAssets    Float?
+  totalAssets              Float?
+
+  // LIABILITIES (All values in crores)
+  // Current Liabilities
+  accountsPayable          Float?
+  taxesPayable             Float?
+  accruals                 Float?
+  shortTermBorrowings      Float?
+  shortTermDebtDetailed    Float?
+  otherCurrentLiabilities  Float?
+  deferredTaxLiabilitiesST Float?
+  otherCurrentLiabsDetailed Float?
+  currentLiabilities       Float?
+
+  // Non-Current Liabilities
+  longTermBorrowings       Float?
+  longTermBorrowingsDetailed Float?
+  otherNonCurrentLiabilities Float?
+  otherNonCurrentLiabsDetailed Float?
+  nonCurrentLiabilities    Float?
+  totalLiabilities         Float?
+
+  // EQUITY (All values in crores)
+  shareCapitalAndAPIC      Float?
+  commonStock              Float?
+  additionalPaidInCapital  Float?
+  retainedEarnings         Float?
+  equityBeforeMinority     Float?
+  minorityInterest         Float?
+  totalEquity              Float?
+  totalLiabilitiesAndEquity Float?
+  sharesOutstanding        Float?
+
+  // CALCULATED RATIOS (Percentages and ratios remain as-is)
+  netDebt                  Float?
+  netDebtToEquityPercent   Float?
+  tceRatio                 Float?
+  currentRatio             Float?
+  cashConversionCycle      Float?
+
+  // Additional Calculated Fields
+  workingCapital           Float?
+  debtToAssets             Float?
+  equityRatio              Float?
+
+  // Metadata
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  company                  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Indexes for performance (critical for screener queries)
+  @@unique([companyId, year, quarter])
+  @@index([companyId])
+  @@index([year])
+  @@index([year, quarter])
+  @@index([currentRatio])
+  @@index([netDebtToEquityPercent])
+  @@index([totalAssets])
+  @@index([totalEquity])
+  @@index([currentLiabilities])
+  @@index([workingCapital])
+  @@index([debtToAssets])
+  @@index([tceRatio])
+  @@map("balance_sheets")
+}
